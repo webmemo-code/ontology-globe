@@ -76,12 +76,15 @@ const SITE_TINT = { travelmemo: new THREE.Color('#26C6DA'), reisememo: new THREE
 const GOLD = new THREE.Color('#FFD54F');
 
 interface Box {
-  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshStandardMaterial>;
+  mesh: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>;
   outline: THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial>;
   halo: THREE.Sprite;
   face?: THREE.Sprite;
   base: Vec3;
+  /** Diameter: articles carrying the entity. */
   size: number;
+  /** Height: AI fetches of the entity when the snapshot has them, else the diameter. */
+  height: number;
   detail: { value: number };
 }
 
@@ -113,6 +116,10 @@ export class GraphScene {
   private layouts: Record<'graph' | 'system' | 'mirror' | 'mirrorDe', Map<string, Vec3>>;
   private dome: Dome;
   private postsByKey = new Map<string, GraphPost>();
+  /** Whether the snapshot carries AI fetch weights; without them cylinders keep height = width. */
+  private hasAi = false;
+  /** Entities an agent fetched in the live feed -> tier colour; their outline lights up. */
+  private liveEntities = new Map<string, string>();
   private tree: PlaceTree;
   private nodes: Map<string, GraphNode>;
   private atlas: Atlas | null = null;
@@ -271,7 +278,7 @@ export class GraphScene {
     this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#9ecbff', size: 0.7, transparent: true, opacity: 0.7, fog: false })));
   }
 
-  private makeBox(node: GraphNode, box: THREE.BoxGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
+  private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
     const color = new THREE.Color(CLASS_COLORS[node.class] ?? '#B0BEC5');
     const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color, emissive: color, transparent: true, depthWrite: false, metalness: 0.2, roughness: 0.4 }));
     mesh.userData.key = node.key;
@@ -284,12 +291,14 @@ export class GraphScene {
     withDetailFade(glow.material, detail, 0.01, 0.15);
     if (face) withDetailFade(face.material, detail, 0.08);
     this.scene.add(mesh, outline, glow, ...(face ? [face] : []));
-    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, detail };
+    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, height: 1, detail };
   }
 
   private buildNodes() {
-    const box = new THREE.BoxGeometry(1, 1, 1);
-    const edges = new THREE.EdgesGeometry(box);
+    // Entities are cylinders: width = articles, height = AI fetches (#394).
+    const box = new THREE.CylinderGeometry(0.5, 0.5, 1, 24);
+    const edges = new THREE.EdgesGeometry(box, 30);
+    this.hasAi = this.graph.nodes.some((n) => Object.values(n.sites).some((s) => s?.ai !== undefined));
     const halo = haloTexture();
     for (const node of this.graph.nodes) {
       const base = this.layouts.graph.get(node.key)!;
@@ -388,6 +397,8 @@ export class GraphScene {
         return n ? labelFor(n, site) : null;
       },
     });
+    this.liveEntities = new Map(this.live.entityHits);
+    if (this.views.size) this.applyStyle();
   }
 
   /** How an article is named on the globe; the app swaps in real titles once they load. */
@@ -594,8 +605,10 @@ export class GraphScene {
     const present = !!s;
     const orphan = !s || s.status === 'orphan';
     b.size = present ? Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize) : 0.5;
-    b.mesh.scale.setScalar(b.size);
-    b.outline.scale.setScalar(b.size * 1.04);
+    // No fetches = a flat disc; the most fetched entity stands three diameters tall.
+    const ai = s?.ai ?? 0;
+    b.height = !this.hasAi || !present ? b.size : ai > 0 ? b.size * (0.6 + 2.4 * ai) : b.size * 0.25;
+    scaleBox(b, 1);
     const m = b.mesh.material;
     // Authors sit on every article, so their tier says little; keep them from outshining the map.
     m.emissiveIntensity = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : 1);
@@ -654,7 +667,15 @@ export class GraphScene {
       const present = this.styleBox(v, node, s, dim, maxSize);
       v.pickable = (present || !dim) && !noBox;
       // A face replaces the box; an invisible box would still write depth and hide it.
-      v.mesh.visible = v.outline.visible = !v.face && !noBox;
+      // An agent's fetch lights the outline up in its colour, even around a flag or logo.
+      const fetched = this.view === 'graph' ? this.liveEntities.get(node.key) : undefined;
+      v.mesh.visible = !v.face && !noBox;
+      v.outline.visible = (!v.face || !!fetched) && !noBox;
+      if (fetched) {
+        v.outline.material.color.set(fetched);
+        v.outline.material.userData.base = v.outline.material.color.clone();
+        v.outline.material.opacity = 1;
+      }
       if (v.face) v.face.visible = !noBox;
       if (noBox) v.halo.visible = false;
 
@@ -1073,12 +1094,18 @@ export class GraphScene {
     const v = this.selected ? this.views.get(this.selected) : undefined;
     if (v && !v.face) {
       for (const b of this.view === 'mirror' ? [v, v.twin] : [v]) {
-        const s = b.size * (1 + 0.12 * Math.sin(t * 4));
-        b.mesh.scale.setScalar(s);
-        b.outline.scale.setScalar(s * 1.04);
+        scaleBox(b, 1 + 0.12 * Math.sin(t * 4));
         b.mesh.rotation.y = b.outline.rotation.y = t * 0.8;
       }
     }
+    // Entities an agent is fetching: the outline breathes in the agent's colour.
+    if (this.live.group.visible)
+      for (const key of this.liveEntities.keys()) {
+        const b = this.views.get(key);
+        if (!b || b === v) continue;
+        b.outline.scale.set(b.size, b.height, b.size).multiplyScalar(1.04 * (1.05 + 0.15 * Math.sin(t * 3)));
+        b.outline.material.opacity = 0.65 + 0.35 * Math.sin(t * 3);
+      }
     this.controls.update();
     const { clientWidth: w, clientHeight: h } = this.container;
     // Labels anchor to the interior entity shells, not the geographic surface.
@@ -1105,4 +1132,10 @@ export class GraphScene {
     this.renderer.dispose();
     el.remove();
   }
+}
+
+/** Size a cylinder: diameter b.size, height b.height, times k; the outline sits just outside. */
+function scaleBox(b: Box, k: number) {
+  b.mesh.scale.set(b.size * k, b.height * k, b.size * k);
+  b.outline.scale.copy(b.mesh.scale).multiplyScalar(1.04);
 }

@@ -5,9 +5,12 @@
 // over its operator's headquarters, drops a thin tether to the country its
 // requests came from, and beams to the article or entity it fetched. Bots
 // with no known operator keep orbiting.
-// What is being read glows: each target article or entity gets a pulsing ring
-// in the reader's or bot's colour and its title as a label. A ring grows a
-// little with more readers on it, but never shows a count.
+// What is being read glows. An article gets a pulsing ring where it is set (its
+// photos' location, else its country) in the reader's or bot's colour, with its
+// title as a label; a ring grows a little with more readers, never shows a
+// count. An entity an agent fetched gets no ring: its outline lights up and
+// breathes in the agent's colour instead (entityHits, applied by GraphScene),
+// so pings on the skin are articles and lit outlines inside are entities.
 // No numbers anywhere: one dot per distinct reader row, one satellite per bot.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
@@ -58,7 +61,7 @@ function flowingDash(params: THREE.LineDashedMaterialParameters) {
 
 export interface LiveContext {
   atlas: Atlas | null;
-  /** Centre of an article's tile, or null when the article is not on the globe. */
+  /** Centre of an article's tile, or null when the article is not on the globe; the fallback when destination is null. */
   tile: (site: SiteKey, id: number) => THREE.Vector3 | null;
   /** Where the article's photos were taken, else its country's true centroid, on the skin; or null. */
   destination: (site: SiteKey, id: number) => THREE.Vector3 | null;
@@ -117,6 +120,8 @@ export class LiveLayer {
   private ringTex = ringTexture();
   private rings: THREE.Sprite[] = [];
   private targets = new Map<string, Target>();
+  /** Entities agents fetched -> the colour their box lights up in; the first bot listed decides. */
+  readonly entityHits = new Map<string, string>();
 
   private labels: Labels;
 
@@ -132,10 +137,16 @@ export class LiveLayer {
       if (ctx.atlas) for (const r of snap.readers) this.addReader(site, r.country, r.city, r.post, ctx);
       for (const b of snap.bots) {
         const at =
-          b.kind === 'post' && b.post ? ctx.tile(site, b.post) : b.kind === 'entity' && b.entity ? toVec(ctx.entity(b.entity)) : null;
+          b.kind === 'post' && b.post
+            ? ctx.destination(site, b.post) ?? ctx.tile(site, b.post)
+            : b.kind === 'entity' && b.entity
+              ? toVec(ctx.entity(b.entity))
+              : null;
         const sat = this.satellite(b.bot);
+        const color = TIER_COLORS[tierOf(b.bot)];
         if (at) sat.targets.push({ at, fresh: 1 - (0.7 * Math.min(b.seconds_ago, WINDOW_S)) / WINDOW_S });
-        if (at) this.mark(b.kind === 'post' ? `${site}:${b.post}` : `entity:${b.entity}`, at, TIER_COLORS[tierOf(b.bot)], ctx.name({ site, post: b.post, entity: b.entity }));
+        if (at && b.kind === 'post') this.mark(`${site}:${b.post}`, at, color, ctx.name({ site, post: b.post }));
+        if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) this.entityHits.set(b.entity!, color);
         const centre = b.country && ctx.atlas && !sat.origins.has(b.country) ? countryCentre(ctx.atlas, b.country) : null;
         if (centre) sat.origins.set(b.country!, new THREE.Vector3(...domeDirection(centre[0], centre[1])).multiplyScalar(DOME_R * 1.01));
       }
@@ -161,11 +172,10 @@ export class LiveLayer {
     this.readerGroup.add(dot);
     this.dots.push(dot);
     if (!post) return;
-    const tile = ctx.tile(site, post);
-    if (!tile) return;
-    this.mark(`${site}:${post}`, tile, READER_COLOR, ctx.name({ site, post }));
-    // The arc lands where the article really is; the ring stays on the tile.
-    const to = ctx.destination(site, post) ?? tile;
+    // The arc and the ring land where the article is set, not on its cartogram tile.
+    const to = ctx.destination(site, post) ?? ctx.tile(site, post);
+    if (!to) return;
+    this.mark(`${site}:${post}`, to, READER_COLOR, ctx.name({ site, post }));
     // Arc over the skin: lift the control point outward, more for longer hops.
     const mid = from.clone().add(to).multiplyScalar(0.5);
     const lift = DOME_R * (1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
@@ -292,6 +302,7 @@ export class LiveLayer {
     for (const key of this.targets.keys()) this.labels.set(`live-target:${key}`, null, { x: 0, y: 0, z: 0 }, 0);
     this.rings = [];
     this.targets.clear();
+    this.entityHits.clear();
     this.arcs = [];
     this.dots = [];
     for (const s of this.sats.values()) {

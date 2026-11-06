@@ -30,6 +30,8 @@ export function statsFor(node: GraphNode, mode: SiteMode): SiteStats | null {
     posts: a.posts + b.posts,
     subtree: a.subtree + b.subtree,
     perf: PERF_RANK[a.perf] >= PERF_RANK[b.perf] ? a.perf : b.perf,
+    // Weights are relative per site; the busier site speaks for both.
+    ai: a.ai === undefined && b.ai === undefined ? undefined : Math.max(a.ai ?? 0, b.ai ?? 0),
   }));
 }
 
