@@ -1,6 +1,6 @@
 // The live layer on the globe: readers as glowing dots at their country (city
 // jittered, never a precise location) with a flowing arc to the article
-// they read (ending at the true centre of the article's country); AI agents as satellites coloured by what they fetch for
+// they read (ending where the article's photos were taken, else at its country's centre); AI agents as satellites coloured by what they fetch for
 // (training, search, a user's question). A satellite hovers, geostationary,
 // over its operator's headquarters, drops a thin tether to the country its
 // requests came from, and beams to the article or entity it fetched. Bots
@@ -60,7 +60,7 @@ export interface LiveContext {
   atlas: Atlas | null;
   /** Centre of an article's tile, or null when the article is not on the globe. */
   tile: (site: SiteKey, id: number) => THREE.Vector3 | null;
-  /** The article's country at its true geo centroid on the skin, or null. */
+  /** Where the article's photos were taken, else its country's true centroid, on the skin; or null. */
   country: (site: SiteKey, id: number) => THREE.Vector3 | null;
   /** An entity's box position, or null. */
   entity: (key: string) => Vec3 | null;
@@ -164,7 +164,7 @@ export class LiveLayer {
     const tile = ctx.tile(site, post);
     if (!tile) return;
     this.mark(`${site}:${post}`, tile, READER_COLOR, ctx.name({ site, post }));
-    // The arc lands on the article's country where it really is; the ring stays on the tile.
+    // The arc lands where the article really is; the ring stays on the tile.
     const to = ctx.country(site, post) ?? tile;
     // Arc over the skin: lift the control point outward, more for longer hops.
     const mid = from.clone().add(to).multiplyScalar(0.5);

@@ -362,8 +362,11 @@ export class GraphScene {
         const f = this.dome.postFace.get(`post:${site}:${id}`);
         return f === undefined ? null : this.dome.centers[f].clone();
       },
-      // The article's country at its true centroid, not its cartogram patch.
+      // Where the article's photos were taken, else its country at its true
+      // centroid; never its cartogram patch.
       country: (site, id) => {
+        const geo = this.postsByKey.get(`post:${site}:${id}`)?.geo;
+        if (geo) return new THREE.Vector3(...domeDirection(geo.lat, geo.lon)).multiplyScalar(DOME_R * 1.015);
         const f = this.dome.postFace.get(`post:${site}:${id}`);
         const c = f === undefined ? null : this.dome.faceRegion[f];
         const feat = c ? this.atlas?.byNode.get(c) : undefined;
