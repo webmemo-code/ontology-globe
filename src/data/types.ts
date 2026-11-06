@@ -42,6 +42,8 @@ export interface GraphPost {
   perf: Perf;
   /** The translation on the other blog, "{site}:{id}", when there is one. */
   pair?: string;
+  /** Where the article's own photos were taken (median GPS, ~1 km), when they carry GPS. */
+  geo?: { lat: number; lon: number };
 }
 
 export interface SiteMeta {

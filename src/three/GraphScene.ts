@@ -26,7 +26,7 @@ import { buildStoryMap, type StoryMap } from './storymap';
 import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats } from '../data/types';
 import type { Geometry } from 'geojson';
-import { geoCentroid } from 'd3-geo';
+import { geoCentroid, geoContains } from 'd3-geo';
 
 const GHOST_R = DOME_R * GHOST_SHELL;
 const MAX_STEP = Math.cos((12 * Math.PI) / 180);
@@ -362,13 +362,20 @@ export class GraphScene {
         const f = this.dome.postFace.get(`post:${site}:${id}`);
         return f === undefined ? null : this.dome.centers[f].clone();
       },
-      // The article's country at its true centroid, not its cartogram patch.
-      country: (site, id) => {
+      // Where the article's photos were taken, else its country at its true
+      // centroid; never its cartogram patch. A photo point counts only inside
+      // the article's country (give or take ~50 km for coasts and islands):
+      // some OKF photo lists carry another site's images (wrong GPS), and a
+      // line to the wrong continent is worse than one to the country centre.
+      destination: (site, id) => {
         const f = this.dome.postFace.get(`post:${site}:${id}`);
         const c = f === undefined ? null : this.dome.faceRegion[f];
         const feat = c ? this.atlas?.byNode.get(c) : undefined;
         if (!feat) return null;
-        const [lon, lat] = geoCentroid(feat);
+        const geo = this.postsByKey.get(`post:${site}:${id}`)?.geo;
+        const near = (lat: number, lon: number) =>
+          [0, -0.5, 0.5].some((dy) => [0, -0.5, 0.5].some((dx) => geoContains(feat, [lon + dx, lat + dy])));
+        const [lon, lat] = geo && near(geo.lat, geo.lon) ? [geo.lon, geo.lat] : geoCentroid(feat);
         return new THREE.Vector3(...domeDirection(lat, lon)).multiplyScalar(DOME_R * 1.015);
       },
       entity: (key) => this.layouts.graph.get(key) ?? null,
