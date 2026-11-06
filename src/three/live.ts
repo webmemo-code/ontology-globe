@@ -61,7 +61,7 @@ export interface LiveContext {
   /** Centre of an article's tile, or null when the article is not on the globe. */
   tile: (site: SiteKey, id: number) => THREE.Vector3 | null;
   /** Where the article's photos were taken, else its country's true centroid, on the skin; or null. */
-  country: (site: SiteKey, id: number) => THREE.Vector3 | null;
+  destination: (site: SiteKey, id: number) => THREE.Vector3 | null;
   /** An entity's box position, or null. */
   entity: (key: string) => Vec3 | null;
   /** What to call a target: an article's title or an entity's label. */
@@ -165,7 +165,7 @@ export class LiveLayer {
     if (!tile) return;
     this.mark(`${site}:${post}`, tile, READER_COLOR, ctx.name({ site, post }));
     // The arc lands where the article really is; the ring stays on the tile.
-    const to = ctx.country(site, post) ?? tile;
+    const to = ctx.destination(site, post) ?? tile;
     // Arc over the skin: lift the control point outward, more for longer hops.
     const mid = from.clone().add(to).multiplyScalar(0.5);
     const lift = DOME_R * (1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));

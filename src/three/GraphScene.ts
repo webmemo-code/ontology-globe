@@ -364,7 +364,7 @@ export class GraphScene {
       },
       // Where the article's photos were taken, else its country at its true
       // centroid; never its cartogram patch.
-      country: (site, id) => {
+      destination: (site, id) => {
         const geo = this.postsByKey.get(`post:${site}:${id}`)?.geo;
         if (geo) return new THREE.Vector3(...domeDirection(geo.lat, geo.lon)).multiplyScalar(DOME_R * 1.015);
         const f = this.dome.postFace.get(`post:${site}:${id}`);
