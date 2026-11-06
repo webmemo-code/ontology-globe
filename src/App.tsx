@@ -414,7 +414,7 @@ function Viewer({ graph }: { graph: Graph }) {
               <div className="live-legend">
                 <div>
                   <span>
-                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, by country, with a line to the article
+                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, by country, with a line to where the article is set
                   </span>
                 </div>
                 <div>
