@@ -86,6 +86,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const byKey = useMemo(() => new Map(graph.nodes.map((n) => [n.key, n])), [graph]);
   const posts = useMemo(() => new Map(graph.posts.map((p) => [postKey(p), p])), [graph]);
   const storyTotals = useMemo(() => storyCounts(graph), [graph]);
+  // Cylinder heights show AI fetches only when the snapshot carries them (GraphScene falls back to height = width).
+  const hasAi = useMemo(() => graph.nodes.some((n) => Object.values(n.sites).some((s) => s?.ai !== undefined)), [graph]);
   const [atlas, setAtlas] = useState<Atlas | null>(null);
   const [photoSrc, setPhotoSrc] = useState<Record<string, string>>({});
   const [credits, setCredits] = useState<Record<string, Credit>>({});
@@ -436,12 +438,17 @@ function Viewer({ graph }: { graph: Graph }) {
               // The colour keys stay in view; the prose folds away to save height.
               <details className="explain">
                 <summary>How to read the map</summary>
-                {live && <p>AI agents hover over the company that runs them; a thin line drops to the country the request came from.</p>}
+                {live && (
+                  <p>
+                    AI agents hover over the company that runs them; a thin line drops to the country the request came from. A ring on the skin is an article being
+                    read or fetched, where the article is set; an entity an agent fetches lights up its own outline in the agent's colour.
+                  </p>
+                )}
                 <p>
                 Each tile is an article (<b style={{ color: '#26C6DA' }}>EN</b> / <b style={{ color: '#B388FF' }}>DE</b>). Countries are patches sized by
                 our articles, not their area; gold lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
-                them most; ones we write about everywhere stay high. Companies sit over their headquarters. Halo = top
-                search performer · outline = no article yet.
+                them most; ones we write about everywhere stay high. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
+                {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
                 </p>
               </details>
             ) : (

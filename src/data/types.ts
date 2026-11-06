@@ -11,6 +11,8 @@ export interface SiteStats {
   posts: number;
   subtree: number;
   perf: Perf;
+  /** How often AI agents fetched the entity, last 30 days: a log weight 0..1, never a count. */
+  ai?: number;
 }
 
 export interface GraphNode {
