@@ -26,6 +26,7 @@ import { buildStoryMap, type StoryMap } from './storymap';
 import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats } from '../data/types';
 import type { Geometry } from 'geojson';
+import { geoCentroid } from 'd3-geo';
 
 const GHOST_R = DOME_R * GHOST_SHELL;
 const MAX_STEP = Math.cos((12 * Math.PI) / 180);
@@ -360,6 +361,15 @@ export class GraphScene {
       tile: (site, id) => {
         const f = this.dome.postFace.get(`post:${site}:${id}`);
         return f === undefined ? null : this.dome.centers[f].clone();
+      },
+      // The article's country at its true centroid, not its cartogram patch.
+      country: (site, id) => {
+        const f = this.dome.postFace.get(`post:${site}:${id}`);
+        const c = f === undefined ? null : this.dome.faceRegion[f];
+        const feat = c ? this.atlas?.byNode.get(c) : undefined;
+        if (!feat) return null;
+        const [lon, lat] = geoCentroid(feat);
+        return new THREE.Vector3(...domeDirection(lat, lon)).multiplyScalar(DOME_R * 1.015);
       },
       entity: (key) => this.layouts.graph.get(key) ?? null,
       name: ({ site, post, entity }) => {
