@@ -284,7 +284,7 @@ function Viewer({ graph }: { graph: Graph }) {
 
       <header className="hud top-left">
         <h1>
-          Ontology <span>Memo</span>
+          <span>Travel</span> Ontology
         </h1>
         <p className="sub">The knowledge map behind Travelmemo &amp; Reisememo</p>
         <div className="stats">
@@ -386,7 +386,8 @@ function Viewer({ graph }: { graph: Graph }) {
         </div>
       </header>
 
-      <aside className="hud bottom-left legend">
+      <details className="hud bottom-left legend" open>
+        <summary>Legend</summary>
         {view === 'mirror' ? (
           <>
             <div>
@@ -413,7 +414,7 @@ function Viewer({ graph }: { graph: Graph }) {
               <div className="live-legend">
                 <div>
                   <span>
-                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, by country, with a line to the article
+                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, by country, with a line to where the article is set
                   </span>
                 </div>
                 <div>
@@ -451,7 +452,7 @@ function Viewer({ graph }: { graph: Graph }) {
         <button className="linkish credits-link" onClick={() => setShowCredits(!showCredits)}>
           Image credits
         </button>
-      </aside>
+      </details>
 
       {showCredits && (
         <aside className="hud credits">

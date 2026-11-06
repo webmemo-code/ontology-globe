@@ -29,7 +29,7 @@ button, input { font: inherit; color: inherit; }
 .top-left { top: 16px; left: 16px; width: 330px; }
 .bottom-left { bottom: 16px; left: 16px; }
 h1 { margin: 0; font-size: 26px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 300; }
-h1 span { font-weight: 700; color: var(--accent); text-shadow: 0 0 18px rgba(41, 182, 246, 0.6); }
+h1 span { font-weight: 700; color: #00e5ff; text-shadow: 0 0 18px rgba(0, 229, 255, 0.6); }
 .sub { margin: 2px 0 12px; color: var(--muted); font-size: 13px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
 .stats div { text-align: center; }
@@ -170,3 +170,10 @@ a.ext:hover { text-decoration: underline; }
 .legend i.split { background: linear-gradient(135deg, #26C6DA 0 50%, #7E57C2 50% 100%); }
 .legend i.split.en-only { background: linear-gradient(135deg, #26C6DA 0 50%, transparent 50% 100%); outline: 1px solid #FFB300; }
 .legend i.split.de-only { background: linear-gradient(135deg, transparent 0 50%, #7E57C2 50% 100%); outline: 1px solid #FFB300; }
+/* The legend folds to its title; the same caret as the explainer. */
+.legend > summary { cursor: pointer; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; list-style: none; margin-bottom: 6px; }
+.legend:not([open]) > summary { margin-bottom: 0; }
+.legend > summary::-webkit-details-marker { display: none; }
+.legend > summary::before { content: '▸'; display: inline-block; width: 1em; transition: transform 0.15s; }
+.legend[open] > summary::before { transform: rotate(90deg); }
+.legend > summary:hover { opacity: 1; }
