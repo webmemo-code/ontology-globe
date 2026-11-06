@@ -160,11 +160,12 @@ export class LiveLayer {
     dot.userData.phase = j * Math.PI * 2;
     this.readerGroup.add(dot);
     this.dots.push(dot);
-    const tile = post ? ctx.tile(site, post) : null;
+    if (!post) return;
+    const tile = ctx.tile(site, post);
     if (!tile) return;
     this.mark(`${site}:${post}`, tile, READER_COLOR, ctx.name({ site, post }));
     // The arc lands on the article's country where it really is; the ring stays on the tile.
-    const to = ctx.country(site, post!) ?? tile;
+    const to = ctx.country(site, post) ?? tile;
     // Arc over the skin: lift the control point outward, more for longer hops.
     const mid = from.clone().add(to).multiplyScalar(0.5);
     const lift = DOME_R * (1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
