@@ -606,7 +606,8 @@ export class GraphScene {
     const orphan = !s || s.status === 'orphan';
     b.size = present ? Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize) : 0.5;
     // No fetches = a flat disc; the most fetched entity stands three diameters tall.
-    b.height = !this.hasAi || !present ? b.size : s!.ai ? b.size * (0.6 + 2.4 * s!.ai) : b.size * 0.25;
+    const ai = s?.ai ?? 0;
+    b.height = !this.hasAi || !present ? b.size : ai > 0 ? b.size * (0.6 + 2.4 * ai) : b.size * 0.25;
     scaleBox(b, 1);
     const m = b.mesh.material;
     // Authors sit on every article, so their tier says little; keep them from outshining the map.

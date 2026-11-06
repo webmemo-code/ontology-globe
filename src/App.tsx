@@ -86,6 +86,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const byKey = useMemo(() => new Map(graph.nodes.map((n) => [n.key, n])), [graph]);
   const posts = useMemo(() => new Map(graph.posts.map((p) => [postKey(p), p])), [graph]);
   const storyTotals = useMemo(() => storyCounts(graph), [graph]);
+  // Cylinder heights show AI fetches only when the snapshot carries them (GraphScene falls back to height = width).
+  const hasAi = useMemo(() => graph.nodes.some((n) => Object.values(n.sites).some((s) => s?.ai !== undefined)), [graph]);
   const [atlas, setAtlas] = useState<Atlas | null>(null);
   const [photoSrc, setPhotoSrc] = useState<Record<string, string>>({});
   const [credits, setCredits] = useState<Record<string, Credit>>({});
@@ -446,7 +448,7 @@ function Viewer({ graph }: { graph: Graph }) {
                 Each tile is an article (<b style={{ color: '#26C6DA' }}>EN</b> / <b style={{ color: '#B388FF' }}>DE</b>). Countries are patches sized by
                 our articles, not their area; gold lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
                 them most; ones we write about everywhere stay high. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
-                height = how often AI agents fetched it (a flat disc: not yet). Halo = top search performer · outline = no article yet.
+                {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
                 </p>
               </details>
             ) : (

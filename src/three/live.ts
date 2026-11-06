@@ -8,9 +8,9 @@
 // What is being read glows. An article gets a pulsing ring where it is set (its
 // photos' location, else its country) in the reader's or bot's colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
-// count. An entity an agent fetched gets no ring: its own box lights up in the
-// agent's colour instead (entityHits, applied by GraphScene), so pings on the
-// skin are articles and glowing boxes inside are entities.
+// count. An entity an agent fetched gets no ring: its outline lights up and
+// breathes in the agent's colour instead (entityHits, applied by GraphScene),
+// so pings on the skin are articles and lit outlines inside are entities.
 // No numbers anywhere: one dot per distinct reader row, one satellite per bot.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
