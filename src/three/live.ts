@@ -23,6 +23,8 @@ import { haloTexture } from './portrait';
 import { withDepthFade } from './depthFade';
 
 export const READER_COLOR = '#69F0AE';
+/** A reader's line takes its blog's colour, so the two audiences read apart. */
+export const READER_ARC_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#9E9E9E' };
 export const TIER_COLORS: Record<BotTier, string> = { training: '#FF7043', search: '#FFEE58', user: '#9CCC65', other: '#B0BEC5' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
@@ -183,7 +185,7 @@ export class LiveLayer {
     const lift = DOME_R * (1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
     const ctrl = mid.lengthSq() > 1 ? mid.setLength(lift) : new THREE.Vector3(0, lift, 0);
     const curve = new THREE.QuadraticBezierCurve3(from, ctrl, to.clone().multiplyScalar(1.005));
-    const { mat, shift } = flowingDash({ color: READER_COLOR, dashSize: 2.2, gapSize: 1.2, transparent: true, opacity: 0.95, depthWrite: false });
+    const { mat, shift } = flowingDash({ color: READER_ARC_COLORS[site], dashSize: 2.2, gapSize: 1.2, transparent: true, opacity: 0.95, depthWrite: false });
     withDepthFade(mat, 0.6, 0.6);
     const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)), mat);
     arc.userData.shift = shift;
