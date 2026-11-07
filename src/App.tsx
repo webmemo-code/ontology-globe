@@ -5,7 +5,7 @@ import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { storyCounts } from './data/storymap';
 import { loadAtlas, type Atlas } from './data/atlas';
-import { botName, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
+import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
@@ -138,7 +138,13 @@ function Viewer({ graph }: { graph: Graph }) {
     }
     let stop = false;
     const load = async () => {
-      const data = liveParam === 'demo' ? demoLive(graph) : await fetchLive();
+      let data: LiveBySite;
+      if (liveParam === 'demo') {
+        await citiesReady();
+        data = demoLive(graph);
+      } else {
+        data = await fetchLive();
+      }
       if (stop) return;
       setLiveState(data);
       sceneRef.current?.setLive(data);
@@ -471,7 +477,7 @@ function Viewer({ graph }: { graph: Graph }) {
           </div>
           <p>
             Article photos: from the articles on travelmemo.com and reisememo.ch. Flags, coats of arms and logos: Wikimedia Commons via each
-            entity's Wikidata record.
+            entity's Wikidata record. Reader city positions: GeoNames (geonames.org, CC BY 4.0).
           </p>
           <ul>
             {Object.entries(credits)
