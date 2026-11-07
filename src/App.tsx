@@ -5,7 +5,7 @@ import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { storyCounts } from './data/storymap';
 import { loadAtlas, type Atlas } from './data/atlas';
-import { botName, demoLive, loadCities, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
+import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
@@ -140,7 +140,7 @@ function Viewer({ graph }: { graph: Graph }) {
     const load = async () => {
       let data: LiveBySite;
       if (liveParam === 'demo') {
-        await loadCities();
+        await citiesReady();
         data = demoLive(graph);
       } else {
         data = await fetchLive();

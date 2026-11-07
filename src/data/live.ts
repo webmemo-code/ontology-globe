@@ -136,7 +136,7 @@ const HOSTS: Record<Site, string> = { travelmemo: 'https://travelmemo.com', reis
 export async function fetchLive(): Promise<LiveBySite> {
   const out: LiveBySite = {};
   await Promise.all([
-    loadCities(),
+    citiesReady(),
     ...(Object.keys(HOSTS) as Site[]).map(async (site) => {
       try {
         const r = await fetch(`${HOSTS[site]}/wp-json/webmemo-schema/v1/live`, { cache: 'no-store' });
@@ -192,13 +192,27 @@ export function demoLive(graph: Graph, seed = Date.now()): LiveBySite {
 let cities: Record<string, Record<string, [number, number]>> | null = null;
 let citiesLoading: Promise<void> | null = null;
 
-/** Load the city table once; a missing file just leaves readers at their country. */
+/**
+ * Load the city table once; a missing file just leaves readers at their country.
+ * A stalled request is aborted after 10 s and forgotten, so the next poll retries.
+ */
 export function loadCities(): Promise<void> {
-  citiesLoading ??= fetch('cities.json')
+  citiesLoading ??= fetch('cities.json', { signal: AbortSignal.timeout(10_000) })
     .then((r) => (r.ok ? r.json() : {}))
     .then((c) => void (cities = c))
-    .catch(() => void (cities = {}));
+    .catch(() => {
+      citiesLoading = null;
+    });
   return citiesLoading;
+}
+
+/**
+ * Wait for the city table at most `ms`: it is optional, so a slow file must
+ * never hold back the snapshots. Readers fall back to their country meanwhile
+ * and move to their city on a later poll.
+ */
+export function citiesReady(ms = 3000): Promise<void> {
+  return Promise.race([loadCities(), new Promise<void>((done) => setTimeout(done, ms))]);
 }
 
 /** Lower case, no accents, single spaces: how GA4 and GeoNames spellings meet. */
