@@ -137,8 +137,7 @@ export async function fetchLive(): Promise<LiveBySite> {
   const out: LiveBySite = {};
   await Promise.all([
     loadCities(),
-    ...
-    (Object.keys(HOSTS) as Site[]).map(async (site) => {
+    ...(Object.keys(HOSTS) as Site[]).map(async (site) => {
       try {
         const r = await fetch(`${HOSTS[site]}/wp-json/webmemo-schema/v1/live`, { cache: 'no-store' });
         if (r.ok) out[site] = (await r.json()) as LiveSnapshot;

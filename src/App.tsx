@@ -138,7 +138,13 @@ function Viewer({ graph }: { graph: Graph }) {
     }
     let stop = false;
     const load = async () => {
-      const data = liveParam === 'demo' ? (await loadCities(), demoLive(graph)) : await fetchLive();
+      let data: LiveBySite;
+      if (liveParam === 'demo') {
+        await loadCities();
+        data = demoLive(graph);
+      } else {
+        data = await fetchLive();
+      }
       if (stop) return;
       setLiveState(data);
       sceneRef.current?.setLive(data);
