@@ -605,7 +605,8 @@ export class GraphScene {
     const present = !!s;
     const orphan = !s || s.status === 'orphan';
     b.size = present ? Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize) : 0.5;
-    // Height is AI fetches alone, on its own scale (0.4..5 units), so a big
+    // Height is the AI fetch weight alone (log scale 0..1, never a count), on
+    // its own scale (0.4..5 units), so a big
     // topic is not tall just for being big; no fetches = a flat disc.
     const ai = s?.ai ?? 0;
     b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.4 + 4.6 * ai : 0.2;
