@@ -6,7 +6,7 @@ import { postKey } from './data/globe';
 import { storyCounts } from './data/storymap';
 import { loadAtlas, type Atlas } from './data/atlas';
 import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
-import { READER_COLOR, TIER_COLORS } from './three/live';
+import { READER_ARC_COLORS, READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
 
@@ -190,7 +190,7 @@ function Viewer({ graph }: { graph: Graph }) {
     for (const [site, snap] of scoped)
       for (const r of snap.readers) {
         const p = r.post ? posts.get(`post:${site}:${r.post}`) : undefined;
-        if (p) rows.push({ id: `r:${site}:${r.country}:${r.city}:${r.post}`, who: r.city ? `${r.city} · ${r.country}` : r.country, color: READER_COLOR, what: titleOf(p), pick: postKey(p) });
+        if (p) rows.push({ id: `r:${site}:${r.country}:${r.city}:${r.post}`, who: r.city ? `${r.city} · ${r.country}` : r.country, color: READER_ARC_COLORS[site], what: titleOf(p), pick: postKey(p) });
       }
     const readerRows = rows.splice(0);
     const bots = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
@@ -423,6 +423,12 @@ function Viewer({ graph }: { graph: Graph }) {
                 <div>
                   <span>
                     <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, by country, with a line to where the article is set
+                  </span>
+                  <span>
+                    <i style={{ background: READER_ARC_COLORS.reisememo }} /> Reisememo reader
+                  </span>
+                  <span>
+                    <i style={{ background: READER_ARC_COLORS.travelmemo }} /> Travelmemo reader
                   </span>
                 </div>
                 <div>
