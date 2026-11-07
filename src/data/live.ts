@@ -135,7 +135,9 @@ const HOSTS: Record<Site, string> = { travelmemo: 'https://travelmemo.com', reis
 /** Both blogs' snapshots; a blog whose route is missing or down is simply absent. */
 export async function fetchLive(): Promise<LiveBySite> {
   const out: LiveBySite = {};
-  await Promise.all(
+  await Promise.all([
+    loadCities(),
+    ...
     (Object.keys(HOSTS) as Site[]).map(async (site) => {
       try {
         const r = await fetch(`${HOSTS[site]}/wp-json/webmemo-schema/v1/live`, { cache: 'no-store' });
@@ -144,7 +146,7 @@ export async function fetchLive(): Promise<LiveBySite> {
         // offline or not deployed yet: the layer just shows nothing for this blog
       }
     }),
-  );
+  ]);
   return out;
 }
 
@@ -184,6 +186,28 @@ export function demoLive(graph: Graph, seed = Date.now()): LiveBySite {
     };
   }
   return out;
+}
+
+// Cities GA4 names (only where granular location is allowed: Switzerland), from
+// public/cities.json (scripts/build-cities.mjs, GeoNames CC BY 4.0). Loaded once.
+let cities: Record<string, Record<string, [number, number]>> | null = null;
+let citiesLoading: Promise<void> | null = null;
+
+/** Load the city table once; a missing file just leaves readers at their country. */
+export function loadCities(): Promise<void> {
+  citiesLoading ??= fetch('cities.json')
+    .then((r) => (r.ok ? r.json() : {}))
+    .then((c) => void (cities = c))
+    .catch(() => void (cities = {}));
+  return citiesLoading;
+}
+
+/** Lower case, no accents, single spaces: how GA4 and GeoNames spellings meet. */
+const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+/** [lat, lon] of a city GA4 named, or null when unknown (or the table is not loaded). */
+export function cityCentre(alpha2: string, city: string): [number, number] | null {
+  return (city && cities?.[alpha2]?.[fold(city)]) || null;
 }
 
 /** [lat, lon] of a country's centroid, by ISO alpha-2 code; null when the atlas lacks it. */

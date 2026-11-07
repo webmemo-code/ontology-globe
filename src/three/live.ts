@@ -14,7 +14,7 @@
 // No numbers anywhere: one dot per distinct reader row, one satellite per bot.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
-import { botName, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
+import { botName, cityCentre, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
 import type { Atlas } from '../data/atlas';
 import type { SiteKey } from '../data/types';
 import type { Vec3 } from '../data/model';
@@ -159,11 +159,13 @@ export class LiveLayer {
   }
 
   private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext) {
-    const centre = countryCentre(ctx.atlas!, country);
-    if (!centre) return;
-    // Cities spread around their country's centre; nothing finer is ever known.
+    // At the reader's city where GA4 names it (Switzerland, ~1 km), else spread
+    // around the country's centre; nothing finer than a city is ever known.
     const j = hash(`${country}:${city}`);
-    const d = domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(city + country) - 0.5) * 4);
+    const at = cityCentre(country, city);
+    const centre = at ?? countryCentre(ctx.atlas!, country);
+    if (!centre) return;
+    const d = at ? domeDirection(at[0], at[1]) : domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(city + country) - 0.5) * 4);
     const from = new THREE.Vector3(...d).multiplyScalar(DOME_R * 1.015);
     const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color: READER_COLOR, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     dot.position.copy(from);
