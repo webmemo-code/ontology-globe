@@ -422,7 +422,7 @@ function Viewer({ graph }: { graph: Graph }) {
               <div className="live-legend">
                 <div>
                   <span>
-                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, one dot per city (Switzerland) or country, with a line to where the article is set; a short hop when it stays nearby
+                    <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, one dot per reader city (at the city where GA4 names it, Switzerland; spread around the country centre elsewhere), with a line to where the article is set; a short hop when it stays nearby
                   </span>
                   <span>
                     <i style={{ background: READER_ARC_COLORS.reisememo }} /> Reisememo read: line and ring
