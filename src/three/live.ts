@@ -6,7 +6,7 @@
 // requests came from, and beams to the article or entity it fetched. Bots
 // with no known operator keep orbiting.
 // What is being read glows. An article gets a pulsing ring where it is set (its
-// photos' location, else its country) in the reader's or bot's colour, with its
+// photos' location, else its country) in its blog's colour when a person reads it (orange Reisememo, light grey Travelmemo), else the bot's tier colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
 // count. An entity an agent fetched gets no ring: its outline lights up and
 // breathes in the agent's colour instead (entityHits, applied by GraphScene),
@@ -28,10 +28,13 @@ import { withDepthFade } from './depthFade';
 
 export const READER_COLOR = '#69F0AE';
 // The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR is
-// ~0.75, so dots and local rings use a dimmed copy and stay crisp in a crowd.
+// ~0.75, so dots use a dimmed copy (local rings dim their blog colour the same way)
+// and stay crisp in a crowd.
 const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
 /** A reader's line takes its blog's colour, so the two audiences read apart. */
 export const READER_ARC_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#9E9E9E' };
+/** A read article's ring, by blog; Travelmemo's grey is lighter than its arc so it holds up on the pale tiles. */
+export const READER_RING_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#CFD8DC' };
 export const TIER_COLORS: Record<BotTier, string> = { training: '#FF7043', search: '#FFEE58', user: '#9CCC65', other: '#B0BEC5' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
@@ -89,6 +92,8 @@ interface Target {
   weight: number;
   /** Every mark so far came from a nearby reader: draw a small ring, not a full ping. */
   local: boolean;
+  /** A person read it (not only bots): the ring takes the blog's colour and is labelled first. */
+  reader: boolean;
   name: string | null;
 }
 
@@ -208,7 +213,7 @@ export class LiveLayer {
     const to = ctx.destination(site, post) ?? ctx.tile(site, post);
     if (!to) return;
     const local = from.distanceTo(to) < LOCAL_HOP;
-    this.mark(`${site}:${post}`, to, READER_COLOR, ctx.name({ site, post }), local);
+    this.mark(`${site}:${post}`, to, READER_RING_COLORS[site], ctx.name({ site, post }), local, true);
     // Arc over the skin: lift the control point outward, more for longer hops;
     // a local read barely leaves the surface, so Swiss hops do not tangle into a dome.
     const mid = from.clone().add(to).multiplyScalar(0.5);
@@ -231,13 +236,13 @@ export class LiveLayer {
     this.arcs.push(arc);
   }
 
-  /** Note a target; a reader's colour wins over a bot's, since people reading is the headline. */
-  private mark(key: string, at: THREE.Vector3, color: string, name: string | null, local = false) {
+  /** Note a target; a reader's (blog) colour wins over a bot's, since people reading is the headline. */
+  private mark(key: string, at: THREE.Vector3, color: string, name: string | null, local = false, reader = false) {
     const t = this.targets.get(key);
-    if (!t) return void this.targets.set(key, { at, color, weight: 1, name, local });
+    if (!t) return void this.targets.set(key, { at, color, weight: 1, name, local, reader });
     t.weight++;
     t.local &&= local;
-    if (color === READER_COLOR) t.color = color;
+    if (reader && !t.reader) Object.assign(t, { color, reader });
   }
 
   /** A reader dot per city; size grows with the log of its readers and never shows a count. */
@@ -256,14 +261,14 @@ export class LiveLayer {
   private drawTargets() {
     const named = new Set(
       [...this.targets]
-        .sort((a, b) => +(b[1].color === READER_COLOR) - +(a[1].color === READER_COLOR) || b[1].weight - a[1].weight)
+        .sort((a, b) => +b[1].reader - +a[1].reader || b[1].weight - a[1].weight)
         .slice(0, 6)
         .map(([k]) => k),
     );
     for (const [key, t] of this.targets) {
       const ring = new THREE.Sprite(
         // Normal blending: overlapping rings over a busy country must not add up to white.
-        new THREE.SpriteMaterial({ map: this.ringTex, color: t.local ? READER_DIM : t.color, transparent: true, depthWrite: false }),
+        new THREE.SpriteMaterial({ map: this.ringTex, color: t.local ? new THREE.Color(t.color).multiplyScalar(0.78) : t.color, transparent: true, depthWrite: false }),
       );
       // Just above the tile or box, so the ring is never buried in it.
       ring.position.copy(t.at).multiplyScalar(t.at.length() > DOME_R * 0.9 ? 1.012 : 1);

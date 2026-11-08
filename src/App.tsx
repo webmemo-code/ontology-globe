@@ -425,10 +425,10 @@ function Viewer({ graph }: { graph: Graph }) {
                     <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, one dot per city (Switzerland) or country, with a line to where the article is set; a short hop when it stays nearby
                   </span>
                   <span>
-                    <i style={{ background: READER_ARC_COLORS.reisememo }} /> Reisememo reader
+                    <i style={{ background: READER_ARC_COLORS.reisememo }} /> Reisememo read: line and ring
                   </span>
                   <span>
-                    <i style={{ background: READER_ARC_COLORS.travelmemo }} /> Travelmemo reader
+                    <i style={{ background: READER_ARC_COLORS.travelmemo }} /> Travelmemo read: line and ring
                   </span>
                 </div>
                 <div>
