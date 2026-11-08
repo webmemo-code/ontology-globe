@@ -24,7 +24,7 @@ export interface Dome {
   /** near = colour multiplying the photo up close; far = plain tile colour beyond the photo depth. */
   paint: (rgba: (post: GraphPost) => { near: number[]; far: number[] } | null) => void;
   /** Show photos only on tiles in the nearest sixth of the visible depth; dim tiles beyond it. Returns that depth range. */
-  updateLod: (camera: THREE.Camera, focused?: boolean) => { from: number; far: number };
+  updateLod: (camera: THREE.Camera, focused?: boolean) => { from: number; far: number; band: number; detail: number };
   /** Map each article's tile to its cell in the photo atlas. */
   setAtlas: (tex: THREE.Texture, atlas: AtlasIndex) => void;
   hasPhoto: (post: GraphPost) => boolean;
@@ -225,7 +225,7 @@ export function buildDome(graph: Graph, pos: Map<string, Vec3>): Dome {
     lod.uBand.value = (far - near) * 0.04;
     fadeRange.uFadeFrom.value = lod.uLod.value;
     fadeRange.uFadeFar.value = far;
-    return { from: lod.uLod.value, far };
+    return { from: lod.uLod.value, far, band: lod.uBand.value, detail: lod.uPhotoDetail.value };
   };
 
   const setAtlas: Dome['setAtlas'] = (tex, atlas) => {

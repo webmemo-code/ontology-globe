@@ -27,6 +27,7 @@ import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, place
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats } from '../data/types';
 import type { Geometry } from 'geojson';
 import { geoCentroid, geoContains } from 'd3-geo';
+import { createCloseups, type Closeups } from './closeups';
 
 const GHOST_R = DOME_R * GHOST_SHELL;
 const MAX_STEP = Math.cos((12 * Math.PI) / 180);
@@ -115,6 +116,7 @@ export class GraphScene {
   private views = new Map<string, NodeView>();
   private layouts: Record<'graph' | 'system' | 'mirror' | 'mirrorDe', Map<string, Vec3>>;
   private dome: Dome;
+  private closeups: Closeups;
   private postsByKey = new Map<string, GraphPost>();
   /** Whether the snapshot carries AI fetch weights; without them cylinders keep height = width. */
   private hasAi = false;
@@ -235,7 +237,8 @@ export class GraphScene {
     shell.position.y = CUBE_Y;
     this.system.group.add(shell);
     this.system.labels.forEach((l, i) => this.labels.set(`sys-label:${i}`, l.text, l.pos, l.priority, { px: l.px, color: l.color, views: ['system'], always: true }));
-    this.dome.group.add(this.ghost, this.ghostFocus);
+    this.closeups = createCloseups(this.dome);
+    this.dome.group.add(this.ghost, this.ghostFocus, this.closeups.group);
     this.scene.add(this.dome.group, this.links, this.focusLinks, this.hotLines, this.mirrorDecor, this.system.group, this.live.group);
     this.labelScene.add(this.labels.group);
     this.showViewDecor();
@@ -1090,6 +1093,7 @@ export class GraphScene {
     if (this.system.group.visible) this.system.animate(t);
     if (this.live.group.visible) this.live.tick(t);
     const fade = this.dome.group.visible ? this.dome.updateLod(this.camera, !!this.selected || !!this.filter) : null;
+    if (fade) this.closeups.update(this.camera, fade);
     this.depthFade(fade);
     const sky = this.photoSky.material;
     sky.opacity += (this.photoSkyTarget - sky.opacity) * 0.04;
