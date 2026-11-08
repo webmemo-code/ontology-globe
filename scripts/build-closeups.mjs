@@ -4,7 +4,9 @@
 // nearest the camera, where the 64 px atlas cell would be a blur. 320 px
 // wide keeps a photo recognisable when its tile fills the screen and each
 // file around 15 KB. Also writes index.json, the keys that have a file, so
-// the viewer never asks for one that is not there.
+// the viewer never asks for one that is not there. A site without a download
+// cache keeps its published entries (those whose file is still there), so
+// refreshing one blog never hides the other's close-ups.
 //
 //   node scripts/build-closeups.mjs
 import fs from 'node:fs/promises';
@@ -13,6 +15,8 @@ import sharp from 'sharp';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const WIDTH = 320;
+const indexPath = path.join(ROOT, 'public', 'closeups', 'index.json');
+const published = JSON.parse(await fs.readFile(indexPath, 'utf8').catch(() => '[]'));
 const keys = [];
 let bytes = 0;
 for (const site of ['travelmemo', 'reisememo']) {
@@ -23,7 +27,14 @@ for (const site of ['travelmemo', 'reisememo']) {
   try {
     files = await fs.readdir(src);
   } catch {
-    console.warn(`no close-ups for ${site}; run scripts/fetch_closeups.py --site ${site}`);
+    const kept = [];
+    for (const k of published.filter((k) => k.startsWith(`post:${site}:`))) {
+      const ok = await fs.stat(path.join(out, `${k.split(':')[2]}.jpg`)).then(() => true, () => false);
+      if (ok) kept.push(k);
+    }
+    keys.push(...kept);
+    console.warn(`no download cache for ${site}: kept its ${kept.length} published close-ups (run scripts/fetch_closeups.py --site ${site} to refresh)`);
+    continue;
   }
   for (const f of files) {
     const id = path.parse(f).name;
@@ -38,5 +49,5 @@ for (const site of ['travelmemo', 'reisememo']) {
   }
 }
 keys.sort();
-await fs.writeFile(path.join(ROOT, 'public', 'closeups', 'index.json'), JSON.stringify(keys));
+await fs.writeFile(indexPath, JSON.stringify(keys));
 console.log(`${keys.length} close-ups, ${Math.round(bytes / 1024)} KB`);

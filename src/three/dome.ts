@@ -23,7 +23,11 @@ export interface Dome {
   centers: THREE.Vector3[];
   /** near = colour multiplying the photo up close; far = plain tile colour beyond the photo depth. */
   paint: (rgba: (post: GraphPost) => { near: number[]; far: number[] } | null) => void;
-  /** Show photos only on tiles in the nearest sixth of the visible depth; dim tiles beyond it. Returns that depth range. */
+  /**
+   * Show photos only on tiles in the nearest sixth of the visible depth; dim tiles beyond it.
+   * Returns that depth range (`from`: where the photo band ends, `far`: the dome's far side),
+   * the band's soft edge width (`band`) and how far photos are faded in at this zoom (`detail`, 0-1).
+   */
   updateLod: (camera: THREE.Camera, focused?: boolean) => { from: number; far: number; band: number; detail: number };
   /** Map each article's tile to its cell in the photo atlas. */
   setAtlas: (tex: THREE.Texture, atlas: AtlasIndex) => void;

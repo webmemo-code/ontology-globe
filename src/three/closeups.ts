@@ -69,26 +69,43 @@ export function createCloseups(dome: Dome): Closeups {
     .then((keys: string[]) => (have = new Set(keys)))
     .catch(() => (have = new Set()));
 
-  // key -> texture once composed; null while loading or when the file failed.
-  const cache = new Map<string, THREE.CanvasTexture | null>();
+  // Composed textures, least recently used first (Map keeps insertion order).
+  // Loads in flight are tracked apart from them and capped at SLOTS, so a fast
+  // pan cannot queue more than one screenful, and trim() runs whenever a texture
+  // arrives: only textures a slot shows right now are kept past CACHE.
+  const ready = new Map<string, THREE.CanvasTexture>();
+  const pending = new Set<string>();
+  const failed = new Set<string>();
+  const trim = () => {
+    const shown = new Set(slots.map((s) => s.mesh.material.map));
+    for (const [k, t] of ready) {
+      if (ready.size <= CACHE) break;
+      if (shown.has(t)) continue;
+      t.dispose();
+      ready.delete(k);
+    }
+  };
   const load = (key: string) => {
-    if (cache.has(key)) {
-      const t = cache.get(key)!;
-      cache.delete(key); // re-insert: Map order is the LRU order
-      cache.set(key, t);
+    const t = ready.get(key);
+    if (t) {
+      ready.delete(key); // re-insert: most recently used
+      ready.set(key, t);
       return t;
     }
-    cache.set(key, null);
+    if (pending.has(key) || failed.has(key) || pending.size >= SLOTS) return null;
+    pending.add(key);
     const [, site, id] = key.split(':');
     const img = new Image();
-    img.onload = () => cache.has(key) && cache.set(key, compose(img));
+    img.onload = () => {
+      pending.delete(key);
+      ready.set(key, compose(img));
+      trim();
+    };
+    img.onerror = () => {
+      pending.delete(key);
+      failed.add(key);
+    };
     img.src = `closeups/${site}/${id}.jpg`;
-    for (const [k, t] of cache) {
-      if (cache.size <= CACHE) break;
-      if (slots.some((s) => s.mesh.material.map === t)) continue;
-      t?.dispose();
-      cache.delete(k);
-    }
     return null;
   };
 
@@ -144,7 +161,8 @@ export function createCloseups(dome: Dome): Closeups {
         const i = dome.faceToPost[f];
         if (i < 0) continue;
         const d = dome.centers[f].distanceTo(eye);
-        if (d < lod.from + lod.band && have.has(postKey(dome.posts[i]))) near.push({ f, d });
+        // Hidden tiles (the other blog in a one-blog view) never take a slot or a download.
+        if (d < lod.from + lod.band && col.getW(f * 3) > 0.01 && have.has(postKey(dome.posts[i]))) near.push({ f, d });
       }
       picked = near.sort((a, b) => a.d - b.d).slice(0, SLOTS);
     }
