@@ -11,7 +11,12 @@
 // count. An entity an agent fetched gets no ring: its outline lights up and
 // breathes in the agent's colour instead (entityHits, applied by GraphScene),
 // so pings on the skin are articles and lit outlines inside are entities.
-// No numbers anywhere: one dot per distinct reader row, one satellite per bot.
+// No numbers anywhere: one dot per reader city (a little larger with more
+// readers), one satellite per bot. Dots are small solid cores, not additive
+// halos: Switzerland is ~5 units wide on a 60-unit globe, and a few dozen
+// stacked halos burned into one white bloom. A read that stays local (reader
+// and article within LOCAL_HOP of each other, which is most Swiss traffic)
+// draws a low hop and a small ring instead of a full arc and ping.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
 import { botName, cityCentre, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
@@ -19,15 +24,19 @@ import type { Atlas } from '../data/atlas';
 import type { SiteKey } from '../data/types';
 import type { Vec3 } from '../data/model';
 import type { Labels } from './label';
-import { haloTexture } from './portrait';
 import { withDepthFade } from './depthFade';
 
 export const READER_COLOR = '#69F0AE';
+// The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR is
+// ~0.75, so dots and local rings use a dimmed copy and stay crisp in a crowd.
+const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
 /** A reader's line takes its blog's colour, so the two audiences read apart. */
 export const READER_ARC_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#9E9E9E' };
 export const TIER_COLORS: Record<BotTier, string> = { training: '#FF7043', search: '#FFEE58', user: '#9CCC65', other: '#B0BEC5' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
+/** Reader-to-article distance (globe units, ~11 degrees) below which a read draws as a local hop. */
+const LOCAL_HOP = 12;
 // Six operators sit within 60 km of each other in the Bay Area; at globe scale
 // they would stack into one point, so their satellites spread on a small ring.
 const BAY = ['openai', 'anthropic', 'perplexity', 'google', 'apple', 'meta'];
@@ -78,7 +87,24 @@ interface Target {
   color: string;
   /** Readers and bots on it; only ever drives the ring size, never shown. */
   weight: number;
+  /** Every mark so far came from a nearby reader: draw a small ring, not a full ping. */
+  local: boolean;
   name: string | null;
+}
+
+/** A solid dot with a soft rim, for readers: crisp when many sit close together. */
+function dotTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.55, 'rgba(255,255,255,1)');
+  g.addColorStop(0.75, 'rgba(255,255,255,0.35)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
 }
 
 /** A thin bright ring on a transparent canvas, for the target pulses. */
@@ -117,8 +143,10 @@ export class LiveLayer {
   private readerGroup = new THREE.Group();
   private arcs: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>[] = [];
   private dots: THREE.Sprite[] = [];
+  /** Reader cities -> where their dot sits and how many readers it stands for. */
+  private seats = new Map<string, { at: THREE.Vector3; n: number; phase: number }>();
   private sats = new Map<string, Satellite>();
-  private dotTex = haloTexture();
+  private dotTex = dotTexture();
   private ringTex = ringTexture();
   private rings: THREE.Sprite[] = [];
   private targets = new Map<string, Target>();
@@ -153,6 +181,7 @@ export class LiveLayer {
         if (centre) sat.origins.set(b.country!, new THREE.Vector3(...domeDirection(centre[0], centre[1])).multiplyScalar(DOME_R * 1.01));
       }
     }
+    this.drawDots();
     this.drawTargets();
     for (const s of this.sats.values()) {
       s.beams.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, s.targets.length) * 6), 3));
@@ -169,23 +198,31 @@ export class LiveLayer {
     if (!centre) return;
     const d = at ? domeDirection(at[0], at[1]) : domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(city + country) - 0.5) * 4);
     const from = new THREE.Vector3(...d).multiplyScalar(DOME_R * 1.015);
-    const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color: READER_COLOR, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-    dot.position.copy(from);
-    dot.scale.setScalar(4.2);
-    dot.userData.phase = j * Math.PI * 2;
-    this.readerGroup.add(dot);
-    this.dots.push(dot);
+    // One dot per city: further readers there only grow it (drawDots).
+    const key = `${country}:${city}`;
+    const seat = this.seats.get(key);
+    if (seat) seat.n++;
+    else this.seats.set(key, { at: from, n: 1, phase: j * Math.PI * 2 });
     if (!post) return;
     // The arc and the ring land where the article is set, not on its cartogram tile.
     const to = ctx.destination(site, post) ?? ctx.tile(site, post);
     if (!to) return;
-    this.mark(`${site}:${post}`, to, READER_COLOR, ctx.name({ site, post }));
-    // Arc over the skin: lift the control point outward, more for longer hops.
+    const local = from.distanceTo(to) < LOCAL_HOP;
+    this.mark(`${site}:${post}`, to, READER_COLOR, ctx.name({ site, post }), local);
+    // Arc over the skin: lift the control point outward, more for longer hops;
+    // a local read barely leaves the surface, so Swiss hops do not tangle into a dome.
     const mid = from.clone().add(to).multiplyScalar(0.5);
-    const lift = DOME_R * (1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
+    const lift = DOME_R * (local ? 1.02 : 1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
     const ctrl = mid.lengthSq() > 1 ? mid.setLength(lift) : new THREE.Vector3(0, lift, 0);
     const curve = new THREE.QuadraticBezierCurve3(from, ctrl, to.clone().multiplyScalar(1.005));
-    const { mat, shift } = flowingDash({ color: READER_ARC_COLORS[site], dashSize: 2.2, gapSize: 1.2, transparent: true, opacity: 0.95, depthWrite: false });
+    const { mat, shift } = flowingDash({
+      color: READER_ARC_COLORS[site],
+      dashSize: local ? 0.5 : 2.2,
+      gapSize: local ? 0.35 : 1.2,
+      transparent: true,
+      opacity: local ? 0.8 : 0.95,
+      depthWrite: false,
+    });
     withDepthFade(mat, 0.6, 0.6);
     const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)), mat);
     arc.userData.shift = shift;
@@ -195,11 +232,24 @@ export class LiveLayer {
   }
 
   /** Note a target; a reader's colour wins over a bot's, since people reading is the headline. */
-  private mark(key: string, at: THREE.Vector3, color: string, name: string | null) {
+  private mark(key: string, at: THREE.Vector3, color: string, name: string | null, local = false) {
     const t = this.targets.get(key);
-    if (!t) return void this.targets.set(key, { at, color, weight: 1, name });
+    if (!t) return void this.targets.set(key, { at, color, weight: 1, name, local });
     t.weight++;
+    t.local &&= local;
     if (color === READER_COLOR) t.color = color;
+  }
+
+  /** A reader dot per city; size grows with the log of its readers and never shows a count. */
+  private drawDots() {
+    for (const seat of this.seats.values()) {
+      const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color: READER_DIM, transparent: true, depthWrite: false }));
+      dot.position.copy(seat.at);
+      dot.scale.setScalar(0.9 + 0.35 * Math.log2(seat.n));
+      dot.userData.phase = seat.phase;
+      this.readerGroup.add(dot);
+      this.dots.push(dot);
+    }
   }
 
   /** Rings on every target; titles only on the busiest few, readers first, so the globe stays legible. */
@@ -212,11 +262,12 @@ export class LiveLayer {
     );
     for (const [key, t] of this.targets) {
       const ring = new THREE.Sprite(
-        new THREE.SpriteMaterial({ map: this.ringTex, color: t.color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
+        // Normal blending: overlapping rings over a busy country must not add up to white.
+        new THREE.SpriteMaterial({ map: this.ringTex, color: t.local ? READER_DIM : t.color, transparent: true, depthWrite: false }),
       );
       // Just above the tile or box, so the ring is never buried in it.
       ring.position.copy(t.at).multiplyScalar(t.at.length() > DOME_R * 0.9 ? 1.012 : 1);
-      ring.userData.base = 4.5 + 1.2 * Math.min(t.weight - 1, 4);
+      ring.userData.base = t.local ? 1.6 + 0.4 * Math.min(t.weight - 1, 4) : 4.5 + 1.2 * Math.min(t.weight - 1, 4);
       ring.userData.phase = hash(key) * Math.PI * 2;
       this.group.add(ring);
       this.rings.push(ring);
@@ -253,7 +304,7 @@ export class LiveLayer {
 
   /** Orbits, beams and pulses; call every frame. */
   tick(t: number) {
-    for (const dot of this.dots) dot.material.opacity = 0.7 + 0.3 * Math.sin(t * 2.2 + dot.userData.phase);
+    for (const dot of this.dots) dot.material.opacity = 0.8 + 0.2 * Math.sin(t * 2.2 + dot.userData.phase);
     // Target rings breathe outward and fade, like a ping.
     for (const ring of this.rings) {
       const k = ((t * 0.6 + ring.userData.phase) % 1 + 1) % 1;
@@ -309,6 +360,7 @@ export class LiveLayer {
     this.entityHits.clear();
     this.arcs = [];
     this.dots = [];
+    this.seats.clear();
     for (const s of this.sats.values()) {
       this.group.remove(s.mesh, s.beams, s.tethers);
       s.tethers.geometry.dispose();
