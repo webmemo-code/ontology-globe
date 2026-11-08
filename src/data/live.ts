@@ -216,11 +216,12 @@ export function citiesReady(ms = 3000): Promise<void> {
 }
 
 /** Lower case, no accents, single spaces: how GA4 and GeoNames spellings meet. */
-const fold = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
+/** City names as the lookup compares them: no accents, lower case, single spaces. Also the reader-dot key. */
+export const foldCity = (s: string) => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
 /** [lat, lon] of a city GA4 named, or null when unknown (or the table is not loaded). */
 export function cityCentre(alpha2: string, city: string): [number, number] | null {
-  return (city && cities?.[alpha2]?.[fold(city)]) || null;
+  return (city && cities?.[alpha2]?.[foldCity(city)]) || null;
 }
 
 /** [lat, lon] of a country's centroid, by ISO alpha-2 code; null when the atlas lacks it. */
