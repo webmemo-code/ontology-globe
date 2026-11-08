@@ -12,14 +12,15 @@
 // breathes in the agent's colour instead (entityHits, applied by GraphScene),
 // so pings on the skin are articles and lit outlines inside are entities.
 // No numbers anywhere: one dot per reader city (a little larger with more
-// readers), one satellite per bot. Dots are small solid cores, not additive
+// activity there: the feed sends presence rows of city and article, not
+// people, so size says "busier", never "more readers"), one satellite per bot. Dots are small solid cores, not additive
 // halos: Switzerland is ~5 units wide on a 60-unit globe, and a few dozen
 // stacked halos burned into one white bloom. A read that stays local (reader
 // and article within LOCAL_HOP of each other, which is most Swiss traffic)
 // draws a low hop and a small ring instead of a full arc and ping.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
-import { botName, cityCentre, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
+import { botName, cityCentre, foldCity, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
 import type { Atlas } from '../data/atlas';
 import type { SiteKey } from '../data/types';
 import type { Vec3 } from '../data/model';
@@ -148,7 +149,7 @@ export class LiveLayer {
   private readerGroup = new THREE.Group();
   private arcs: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>[] = [];
   private dots: THREE.Sprite[] = [];
-  /** Reader cities -> where their dot sits and how many readers it stands for. */
+  /** Reader cities (folded name) -> where their dot sits and how many presence rows (city + article) it carries. */
   private seats = new Map<string, { at: THREE.Vector3; n: number; phase: number }>();
   private sats = new Map<string, Satellite>();
   private dotTex = dotTexture();
@@ -197,14 +198,16 @@ export class LiveLayer {
   private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext) {
     // At the reader's city where GA4 names it (Switzerland, ~1 km), else spread
     // around the country's centre; nothing finer than a city is ever known.
-    const j = hash(`${country}:${city}`);
+    // Keyed like the coordinate lookup, so Zürich and Zurich from the two feeds are one dot.
+    const cityKey = foldCity(city ?? '');
+    const j = hash(`${country}:${cityKey}`);
     const at = cityCentre(country, city);
     const centre = at ?? countryCentre(ctx.atlas!, country);
     if (!centre) return;
-    const d = at ? domeDirection(at[0], at[1]) : domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(city + country) - 0.5) * 4);
+    const d = at ? domeDirection(at[0], at[1]) : domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(cityKey + country) - 0.5) * 4);
     const from = new THREE.Vector3(...d).multiplyScalar(DOME_R * 1.015);
     // One dot per city: further readers there only grow it (drawDots).
-    const key = `${country}:${city}`;
+    const key = `${country}:${cityKey}`;
     const seat = this.seats.get(key);
     if (seat) seat.n++;
     else this.seats.set(key, { at: from, n: 1, phase: j * Math.PI * 2 });
@@ -245,7 +248,7 @@ export class LiveLayer {
     if (reader && !t.reader) Object.assign(t, { color, reader });
   }
 
-  /** A reader dot per city; size grows with the log of its readers and never shows a count. */
+  /** A reader dot per city; size grows with the log of its presence rows (activity, not people) and never shows a count. */
   private drawDots() {
     for (const seat of this.seats.values()) {
       const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color: READER_DIM, transparent: true, depthWrite: false }));
