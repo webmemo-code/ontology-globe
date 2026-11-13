@@ -23,9 +23,9 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 
 | Encoding | Meaning |
 |---|---|
-| Tile on the skin | One article (turquoise EN, violet DE); brightness = relative search tier |
-| Country patch | A country's articles as one patch of tiles, **sized by article count, not area**; gold lines trace true borders |
-| Gold lines | True country borders (Natural Earth) on the same globe, so you can see how far the article-sized patches stretch Switzerland |
+| Tile on the skin | One article (orange EN, grey DE); brightness = relative search tier |
+| Country patch | A country's articles as one patch of tiles, **sized by article count, not area**; fine lines trace true borders |
+| Fine lines | True country borders (Natural Earth) on the same globe, so you can see how far the article-sized patches stretch Switzerland |
 | Boxes inside | Places on shells by level: continents nearest you, sights nearest the skin |
 | Directions | Patches grow around each country's real direction from Switzerland; neighbours settle on Switzerland's rim |
 | Sky / floor | Topics form the ceiling, organizations the floor, the authors' faces the zenith |

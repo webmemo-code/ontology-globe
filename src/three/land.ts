@@ -12,7 +12,7 @@ export function buildLand(features: Feature<Geometry>[], radius: number) {
   canvas.height = 1024;
   const ctx = canvas.getContext('2d')!;
   const path = geoPath(geoEquirectangular().scale(canvas.width / (2 * Math.PI)).translate([canvas.width / 2, canvas.height / 2]), ctx);
-  ctx.fillStyle = '#78959e';
+  ctx.fillStyle = '#8f8e8b';
   for (const feature of features) {
     ctx.beginPath();
     path(feature);

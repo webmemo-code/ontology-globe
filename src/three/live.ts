@@ -6,7 +6,7 @@
 // requests came from, and beams to the article or entity it fetched. Bots
 // with no known operator keep orbiting.
 // What is being read glows. An article gets a pulsing ring where it is set (its
-// photos' location, else its country) in its blog's colour when a person reads it (orange Reisememo, light grey Travelmemo), else the bot's tier colour, with its
+// photos' location, else its country) in its blog's colour when a person reads it (orange Travelmemo, grey Reisememo), else the bot's tier colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
 // count. An entity an agent fetched gets no ring: its outline lights up and
 // breathes in the agent's colour instead (entityHits, applied by GraphScene),
@@ -27,16 +27,16 @@ import type { Vec3 } from '../data/model';
 import type { Labels } from './label';
 import { withDepthFade } from './depthFade';
 
-export const READER_COLOR = '#69F0AE';
-// The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR is
-// ~0.75, so dots use a dimmed copy (local rings dim their blog colour the same way)
+export const READER_COLOR = '#FF9000';
+// The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR sits
+// right at that edge, so dots use a dimmed copy (local rings dim their blog colour the same way)
 // and stay crisp in a crowd.
 const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
 /** A reader's line takes its blog's colour, so the two audiences read apart. */
-export const READER_ARC_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#9E9E9E' };
-/** A read article's ring, by blog; Travelmemo's grey is lighter than its arc so it holds up on the pale tiles. */
-export const READER_RING_COLORS: Record<SiteKey, string> = { reisememo: '#FF9800', travelmemo: '#CFD8DC' };
-export const TIER_COLORS: Record<BotTier, string> = { training: '#FF7043', search: '#FFEE58', user: '#9CCC65', other: '#B0BEC5' };
+export const READER_ARC_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#989898' };
+/** A read article's ring, by blog; Reisememo's grey is lighter than its arc so it holds up on the pale tiles. */
+export const READER_RING_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#BDBDBD' };
+export const TIER_COLORS: Record<BotTier, string> = { training: '#4C96F2', search: '#8FBEFF', user: '#2F7DE1', other: '#9D9C9A' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
 /** Reader-to-article distance (globe units, ~11 degrees) below which a read draws as a local hop. */

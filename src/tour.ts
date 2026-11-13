@@ -37,16 +37,16 @@ export const TOUR: TourStop[] = [
   },
   {
     title: 'The small globe grows into the big one',
-    text: 'Every tile on its skin is one article, showing the article’s own photo: turquoise frames for English, violet for German. Gold lines trace the real coastlines.',
+    text: 'Every tile on its skin is one article, showing the article’s own photo: orange for English, grey for German. Fine lines trace the real coastlines.',
   },
   {
     title: 'Every country is a patch of stories',
-    text: 'Each country is a patch of tiles, one tile per article, grown around where it lies on the map. Switzerland, where we live, sits in the middle; its neighbours line up around it. Faint gold lines trace the real borders underneath.',
+    text: 'Each country is a patch of tiles, one tile per article, grown around where it lies on the map. Switzerland, where we live, sits in the middle; its neighbours line up around it. Faint lines trace the real borders underneath.',
     select: 'places/switzerland',
   },
   {
     title: 'Places hang between you and the stories',
-    text: 'Continents float closest to you; countries, regions, towns and sights hang further out, each linked to the place that contains it. Select Zermatt and its articles light up in gold.',
+    text: 'Continents float closest to you; countries, regions, towns and sights hang further out, each linked to the place that contains it. Select Zermatt and its articles light up.',
     select: 'places/zermatt',
   },
   {

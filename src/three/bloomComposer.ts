@@ -53,10 +53,10 @@ export const DEFAULT_BLOOM_CONFIG: BloomConfig = {
 };
 
 export const MOBILE_BLOOM_CONFIG: BloomConfig = {
-  enabled: true, // Aggressive bloom for mobile visibility
-  strength: 2.0,
-  radius: 1.6,     // Wider spread for visibility
-  threshold: 0.1   // Lower cutoff - more pixels bloom
+  enabled: true, // Slightly stronger bloom than desktop for small screens
+  strength: 1.3,
+  radius: 0.8,     // A little wider spread for visibility
+  threshold: 0.55  // Only bright pixels bloom (0.1 washed the whole scene out)
 };
 
 // ============================================================================
