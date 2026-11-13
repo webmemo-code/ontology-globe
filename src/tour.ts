@@ -70,17 +70,6 @@ export const TOUR: TourStop[] = [
     select: 'organizations/swiss-international-air-lines',
   },
   {
-    title: 'Two blogs, one map',
-    text: 'Now the map splits in two: Travelmemo on the left, Reisememo on the right, every entity in the same slot on both walls. Cyan bridges are subjects both blogs cover.',
-    view: 'mirror',
-  },
-  {
-    title: 'The gaps are the plan',
-    text: 'Amber bridges fade out towards the blog that has not written about the subject yet: our translation and content backlog, made visible. Grey outlines are entities still waiting for their first article.',
-    view: 'mirror',
-    camera: cam([-10, 14, 66], [0, 2, 0]),
-  },
-  {
     title: 'Explore it yourself',
     text: 'Step back outside the globe. Click any tile, box or face to drill down, or search for a place you know.',
     camera: cam([60, 40, -140], [0, 0, 0]),
