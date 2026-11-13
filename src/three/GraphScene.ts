@@ -482,6 +482,9 @@ export class GraphScene {
     ctx.drawImage(tex.image as CanvasImageSource, sx + 2, sy + 2, index.cell - 4, index.cell - 4, -40, -40, 592, 336);
     const map = new THREE.CanvasTexture(canvas);
     map.colorSpace = THREE.SRGBColorSpace;
+    // Mirrored twice round the sphere: a single wrap leaves a hard seam where the photo's edges meet.
+    map.wrapS = THREE.MirroredRepeatWrapping;
+    map.repeat.x = 2;
     this.photoSky.material.map?.dispose();
     this.photoSky.material.map = map;
     this.photoSky.material.needsUpdate = true;
