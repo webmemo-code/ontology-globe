@@ -37,16 +37,16 @@ export const TOUR: TourStop[] = [
   },
   {
     title: 'The small globe grows into the big one',
-    text: 'Every tile on its skin is one article, showing the article’s own photo: orange for English, grey for German. Fine lines trace the real coastlines.',
+    text: 'Every dot on its skin is one article, at the place it is about: orange for English, grey for German. Fine lines trace the real coastlines.',
   },
   {
-    title: 'Every country is a patch of stories',
-    text: 'Each country is a patch of tiles, one tile per article, grown around where it lies on the map. Switzerland, where we live, sits in the middle; its neighbours line up around it. Faint lines trace the real borders underneath.',
+    title: 'Every country carries two bars',
+    text: 'Each country carries a pair of bars, orange for Travelmemo and grey for Reisememo, as tall as the number of articles (on a log scale). Switzerland, where we live, is the dense cluster in the middle.',
     select: 'places/switzerland',
   },
   {
-    title: 'Places hang between you and the stories',
-    text: 'Continents float closest to you; countries, regions, towns and sights hang further out, each linked to the place that contains it. Select Zermatt and its articles light up.',
+    title: 'Every place knows its stories',
+    text: 'Countries, regions, towns and sights hang inside the globe under their own spot on the map, each linked to the place that contains it. Select Zermatt and its articles light up.',
     select: 'places/zermatt',
   },
   {

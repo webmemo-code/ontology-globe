@@ -9,22 +9,21 @@ import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { withDepthFade, withHorizonCull } from './depthFade';
 import { withDetailFade } from './detailFade';
-import { buildLand } from './land';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer } from './live';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
-import { buildDome, miniDome, type AtlasIndex, type Dome } from './dome';
+import { buildArticleLayer, type ArticleLayer } from './articles';
+import type { AtlasIndex } from './dome';
 import { haloTexture, makeEmblem, makePortrait } from './portrait';
-import { DOME_R, domeDirection, domeLayout, orgsOverHeadquarters, placesOverTiles, postKey, topicsOverHotspots, type Headquarters } from '../data/globe';
+import { DOME_R, domeDirection, domeLayout, orgsOverHeadquarters, postKey, topicsOverHotspots, type Headquarters } from '../data/globe';
 import { footprints, liftByCountry, type Footprint } from '../data/footprint';
 import type { Atlas } from '../data/atlas';
 import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats } from '../data/types';
 import type { Geometry } from 'geojson';
 import { geoCentroid, geoContains } from 'd3-geo';
-import { createCloseups, type Closeups } from './closeups';
 
 const GHOST_R = DOME_R * GHOST_SHELL;
 const MAX_STEP = Math.cos((12 * Math.PI) / 180);
@@ -66,9 +65,9 @@ export const HOMES: Record<View, CameraKeyframe> = {
 };
 
 const GLOW: Record<Perf, number> = { top10: 1.25, top25: 0.75, active: 0.45, seen: 0.22, none: 0.1 };
-const TILE: Record<Perf, number> = { top10: 1.7, top25: 0.95, active: 0.5, seen: 0.28, none: 0.16 };
-// Kept below 1 so photos never feed the bloom pass; brightness still ranks by perf tier.
-const PHOTO: Record<Perf, number> = { top10: 0.8, top25: 0.68, active: 0.56, seen: 0.48, none: 0.42 };
+// Article dots: brightness and size rank by perf tier.
+const DOT_LIGHT: Record<Perf, number> = { top10: 1.25, top25: 1.0, active: 0.8, seen: 0.6, none: 0.45 };
+const DOT_SIZE: Record<Perf, number> = { top10: 1.5, top25: 1.25, active: 1.0, seen: 0.85, none: 0.7 };
 const SITE_TINT = { travelmemo: new THREE.Color('#FF9000'), reisememo: new THREE.Color('#989898') };
 const GOLD = new THREE.Color('#FFF1DC');
 
@@ -109,8 +108,7 @@ export class GraphScene {
   private bloom: BloomComposerResult;
   private views = new Map<string, NodeView>();
   private layouts: Record<'graph' | 'system', Map<string, Vec3>>;
-  private dome: Dome;
-  private closeups: Closeups;
+  private articles: ArticleLayer;
   private postsByKey = new Map<string, GraphPost>();
   /** Whether the snapshot carries AI fetch weights; without them cylinders keep height = width. */
   private hasAi = false;
@@ -122,7 +120,6 @@ export class GraphScene {
   private ghost = new THREE.Group();
   private ghostFocus = new THREE.Group();
   private ghostMats: LineMaterial[] = [];
-  private land?: ReturnType<typeof buildLand>;
   private globeDetail = { value: 0 };
   private photos: { tex: THREE.Texture; index: AtlasIndex } | null = null;
   // A blurred photo of the selection's best article, fading in over the sky.
@@ -185,17 +182,12 @@ export class GraphScene {
 
     this.tree = placeTree(graph);
     this.nodes = new Map(graph.nodes.map((n) => [n.key, n]));
-    // Geographic directions seed the cartogram; places then re-aim over the
-    // patches their articles actually landed in.
+    // Places keep their true geographic directions; articles are dots at the place they are about.
     const geo = domeLayout(graph);
-    this.dome = buildDome(graph, geo);
-    const domePos = placesOverTiles(graph, geo, (i) => {
-      const f = this.dome.postFace.get(postKey(graph.posts[i]));
-      return f === undefined ? null : { center: this.dome.centers[f].toArray() as [number, number, number], region: this.dome.faceRegion[f] };
-    });
+    this.articles = buildArticleLayer(graph, geo, this.nodes, this.tree);
     // Topics and companies hang over where they are over-represented, judged
     // on both blogs; companies with a known headquarters move there once it loads.
-    const globe = topicsOverHotspots(graph, domePos, this.footprintsFor('both'));
+    const globe = topicsOverHotspots(graph, geo, this.footprintsFor('both'));
     this.layouts = {
       graph: globe,
       system: miniGlobePositions(globe),
@@ -207,15 +199,14 @@ export class GraphScene {
     this.buildLinks();
     this.system = buildSystem(graph, graph.system ?? null, DOME_R);
     // The mini globe wears the globe view's article shell, at the same scale and turn.
-    const shell = miniDome(this.dome);
+    const shell = this.articles.mini();
     shell.scale.setScalar(MINI);
     shell.rotation.y = Math.PI;
     shell.position.y = CUBE_Y;
     this.system.group.add(shell);
     this.system.labels.forEach((l, i) => this.labels.set(`sys-label:${i}`, l.text, l.pos, l.priority, { px: l.px, color: l.color, views: ['system'], always: true }));
-    this.closeups = createCloseups(this.dome);
-    this.dome.group.add(this.ghost, this.ghostFocus, this.closeups.group);
-    this.scene.add(this.dome.group, this.links, this.focusLinks, this.hotLines, this.system.group, this.live.group);
+    this.articles.group.add(this.ghost, this.ghostFocus);
+    this.scene.add(this.articles.group, this.links, this.focusLinks, this.hotLines, this.system.group, this.live.group);
     this.labelScene.add(this.labels.group);
     this.showViewDecor();
     this.applyStyle();
@@ -324,6 +315,7 @@ export class GraphScene {
 
   setMode(mode: SiteMode) {
     this.mode = mode;
+    this.articles.setMode(mode);
     this.applyStyle();
     this.refreshFocus();
     this.refreshLive();
@@ -339,18 +331,14 @@ export class GraphScene {
     const data = this.liveData && this.mode !== 'both' ? { [this.mode]: this.liveData[this.mode] } : this.liveData;
     this.live.set(data, {
       atlas: this.atlas,
-      tile: (site, id) => {
-        const f = this.dome.postFace.get(`post:${site}:${id}`);
-        return f === undefined ? null : this.dome.centers[f].clone();
-      },
+      tile: (site, id) => this.articles.at(`post:${site}:${id}`)?.clone() ?? null,
       // Where the article's photos were taken, else its country at its true
       // centroid; never its cartogram patch. A photo point counts only inside
       // the article's country (give or take ~50 km for coasts and islands):
       // some OKF photo lists carry another site's images (wrong GPS), and a
       // line to the wrong continent is worse than one to the country centre.
       destination: (site, id) => {
-        const f = this.dome.postFace.get(`post:${site}:${id}`);
-        const c = f === undefined ? null : this.dome.faceRegion[f];
+        const c = this.articles.countryOf(`post:${site}:${id}`);
         const feat = c ? this.atlas?.byNode.get(c) : undefined;
         if (!feat) return null;
         const geo = this.postsByKey.get(`post:${site}:${id}`)?.geo;
@@ -424,7 +412,6 @@ export class GraphScene {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
       this.photos = { tex, index };
-      this.dome.setAtlas(tex, index);
       this.applyStyle();
     } catch (e) {
       console.warn('photo atlas:', e);
@@ -468,13 +455,7 @@ export class GraphScene {
   setAtlas(atlas: Atlas) {
     this.atlas = atlas;
     this.ghost.clear();
-    if (this.land) {
-      this.land.geometry.dispose();
-      this.land.material.map?.dispose();
-      this.land.material.dispose();
-    }
-    this.land = buildLand(atlas.features, GHOST_R * 0.998);
-    this.ghost.add(this.land);
+    this.articles.setAtlas(atlas);
     const covered = new Set(atlas.byNode.values());
     const faint: number[] = [];
     const ours: number[] = [];
@@ -669,7 +650,7 @@ export class GraphScene {
     // ones that merely mention it but were filed elsewhere stay dim amber.
     const home = this.selected && this.views.has(this.selected) ? ancestorOfType(this.tree, this.nodes, this.selected, 'Country') : null;
     const fp = this.selectedFootprint();
-    this.paintDome(hl?.posts ?? this.filterPosts(), home, fp ? liftByCountry(fp) : null);
+    this.paintArticles(hl?.posts ?? this.filterPosts(), home, fp ? liftByCountry(fp) : null);
     this.updatePhotoSky(hl?.posts ?? null);
   }
 
@@ -678,46 +659,25 @@ export class GraphScene {
    * by how over-represented it is in their country, and the rest of a hotspot
    * country's patch gets a faint wash, so the patch reads as a heat region.
    */
-  private paintDome(lit: Set<string> | null, home: string | null = null, lens: Map<string, number> | null = null) {
+  private paintArticles(lit: Set<string> | null, home: string | null = null, lens: Map<string, number> | null = null) {
     const tmp = new THREE.Color();
-    const boost = lit && lit.size > 60 ? 0.85 : 1.8;
     const v4 = (c: THREE.Color, a: number) => [c.r, c.g, c.b, a];
-    this.dome.paint((post) => {
+    // Kept under the bloom threshold: a place's lit dots sit close together and would burn into one blob.
+    const crowd = !!lit && lit.size > 12;
+    const gold = { rgba: v4(tmp.copy(GOLD).multiplyScalar(crowd ? 0.58 : 0.8), 1), size: crowd ? 1.35 : 1.7 };
+    const dimAmber = { rgba: [0.55, 0.36, 0.12, 0.7], size: 1.1 };
+    this.articles.paint((post) => {
       if (this.mode !== 'both' && post.site !== this.mode) return null;
       const key = postKey(post);
-      // `far` is the plain tile; `near` multiplies the photo where the LOD shows it
-      // (near-white keeps the photo, a light site tint says EN or DE, gold marks the selection).
-      const photo = this.dome.hasPhoto(post);
-      const f = this.dome.postFace.get(key);
-      const lift = lens && f !== undefined ? lens.get(this.dome.faceRegion[f] ?? '') ?? 0 : 0;
-      let far: number[];
-      let near: number[];
-      if (lit && lit.has(key) && lens && lift < 1.5) {
-        // Tagged, but no more than the blog's usual share here: dim amber.
-        far = [0.3, 0.17, 0.02, 0.55];
-        near = [0.45, 0.32, 0.12, 0.5];
-      } else if (lit && lit.has(key) && lens) {
-        const k = Math.min(1, 0.45 + 0.2 * Math.log2(lift)) * 1.8;
-        far = [GOLD.r * k, GOLD.g * k, GOLD.b * k, 1];
-        near = [1.0, 0.95, 0.86, 0.92];
-      } else if (lit && lens && lift >= 1.5) {
-        far = near = [0.22, 0.12, 0.02, 0.5];
-      } else if (lit && lit.has(key)) {
-        if (home && f !== undefined && this.dome.faceRegion[f] !== home) {
-          far = [0.3, 0.17, 0.02, 0.55];
-          near = [0.45, 0.32, 0.12, 0.5];
-        } else {
-          // A big selection (Switzerland: ~600 tiles) would bloom into one white disc.
-          far = [GOLD.r * boost, GOLD.g * boost, GOLD.b * boost, 1];
-          near = [1.0, 0.95, 0.86, 0.92];
-        }
-      } else if (lit) {
-        far = near = v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(0.25), 0.3);
-      } else {
-        far = v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(TILE[post.perf]), post.perf === 'top10' || post.perf === 'top25' ? 0.95 : 0.6);
-        near = v4(tmp.setRGB(1, 1, 1).lerp(SITE_TINT[post.site], 0.45).multiplyScalar(PHOTO[post.perf]), 0.45);
-      }
-      return { near: photo ? near : far, far };
+      const country = this.articles.countryOf(key);
+      const lift = lens ? lens.get(country ?? '') ?? 0 : 0;
+      const isLit = !!lit && lit.has(key);
+      if (isLit && lens && lift < 1.5) return dimAmber; // tagged, but no more than the blog's usual share here
+      if (isLit && lens) return gold;
+      if (lit && lens && lift >= 1.5) return { rgba: [0.4, 0.25, 0.08, 0.5], size: 0.9 };
+      if (isLit) return home && country !== home ? dimAmber : gold; // filed under another country: dim amber
+      if (lit) return { rgba: v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(0.3), 0.35), size: 0.8 };
+      return { rgba: v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(DOT_LIGHT[post.perf]), 0.95), size: DOT_SIZE[post.perf] };
     });
   }
 
@@ -731,7 +691,6 @@ export class GraphScene {
       ? 1 - THREE.MathUtils.smoothstep(this.camera.position.length(), DOME_R * 0.9, DOME_R * 1.9)
       : 1;
     this.globeDetail.value = overview;
-    if (this.land) this.land.material.opacity = THREE.MathUtils.lerp(0.25, 0.08, overview);
     const tint = (m: THREE.Material & { color: THREE.Color }, f: number) => {
       m.color.copy((m.userData.base ??= m.color.clone()) as THREE.Color).multiplyScalar(f);
     };
@@ -789,10 +748,10 @@ export class GraphScene {
     const segs: number[] = [];
     const post = this.postsByKey.get(this.selected);
     if (post) {
-      // Rays from the article tile to the entities it is tagged with.
-      const f = this.dome.postFace.get(this.selected);
-      if (f === undefined) return;
-      const c = this.dome.centers[f].clone().multiplyScalar(0.995);
+      // Rays from the article dot to the entities it is tagged with.
+      const at = this.articles.at(this.selected);
+      if (!at) return;
+      const c = at.clone().multiplyScalar(0.995);
       for (const k of post.entities) {
         const b = this.views.get(k)?.base;
         if (b) segs.push(c.x, c.y, c.z, b.x, b.y, b.z);
@@ -805,12 +764,11 @@ export class GraphScene {
         const b = this.views.get(k)?.base;
         if (b) segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
       }
-      // ...and from the entity out to each of its articles on the dome.
+      // ...and from the entity out to each of its articles on the skin.
       for (const p of postsFor(this.graph, this.mode)) {
         if (!p.entities.includes(v.key)) continue;
-        const f = this.dome.postFace.get(postKey(p));
-        if (f === undefined) continue;
-        const c = this.dome.centers[f];
+        const c = this.articles.at(postKey(p));
+        if (!c) continue;
         segs.push(a.x, a.y, a.z, c.x, c.y, c.z);
       }
     }
@@ -829,12 +787,11 @@ export class GraphScene {
     if (!key) return this.flyTo(HOMES[this.view]);
     const post = this.postsByKey.get(key);
     if (post && this.view === 'graph') {
-      const f = this.dome.postFace.get(key);
-      if (f === undefined) return;
-      // From inside, a tile is just a lit triangle. Step outside instead, beside
-      // and above it, and aim between the tile and its entities, so the tile
+      const c = this.articles.at(key);
+      if (!c) return;
+      // From inside, a dot is easy to miss. Step outside instead, beside
+      // and above it, and aim between the dot and its entities, so the dot
       // sits off-centre and its rays fan across the frame.
-      const c = this.dome.centers[f];
       const ents = post.entities.map((k) => this.views.get(k)?.base).filter(Boolean) as Vec3[];
       const mid = ents.length
         ? ents.reduce<THREE.Vector3>((a, b) => a.add(new THREE.Vector3(b.x, b.y, b.z)), new THREE.Vector3()).divideScalar(ents.length)
@@ -852,15 +809,26 @@ export class GraphScene {
     if (!v) return;
     const p = v.base;
     if (this.view === 'system') return this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]));
+    // A place hangs under its own spot on the true map, in a radial stack with
+    // everything that contains it: frame it from outside, where the map reads.
+    if (v.node.class === 'places') {
+      const out = new THREE.Vector3(p.x, p.y, p.z).normalize();
+      let across = new THREE.Vector3().crossVectors(out, new THREE.Vector3(0, 1, 0));
+      if (across.lengthSq() < 1e-4) across = new THREE.Vector3(1, 0, 0);
+      across.normalize();
+      const up = new THREE.Vector3().crossVectors(across, out).normalize();
+      const reach = v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45;
+      const eye = out.clone().multiplyScalar(DOME_R * reach).addScaledVector(across, DOME_R * 0.22).addScaledVector(up, DOME_R * 0.18);
+      return this.flyTo(kf(eye.toArray(), out.multiplyScalar(DOME_R * 0.96).toArray()), 1800);
+    }
     // Inside the dome, stand behind the entity on the line from its articles
     // and look past it: the tag sits in the foreground, a little off-centre,
     // with its stories glowing behind it. Not all of them fit, and need not.
-    // The eye stays clear of the skin, so the dome's own tiles stay out of frame.
+    // The eye stays clear of the skin, so the skin's own dots stay out of frame.
     const t = new THREE.Vector3(p.x, p.y, p.z);
     const tiles = [...(this.highlight()?.posts ?? [])]
-      .map((k) => this.dome.postFace.get(k))
-      .filter((f): f is number => f !== undefined)
-      .map((f) => this.dome.centers[f]);
+      .map((k) => this.articles.at(k))
+      .filter((c): c is THREE.Vector3 => !!c);
     const toward = tiles.length ? tiles.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(tiles.length) : t.clone();
     if (toward.lengthSq() < 1) toward.copy(t); // articles all around the globe cancel out
     toward.setLength(DOME_R);
@@ -895,7 +863,7 @@ export class GraphScene {
 
   private showViewDecor() {
     const v = this.view;
-    this.dome.group.visible = this.links.visible = this.hotLines.visible = this.live.group.visible = v === 'graph';
+    this.articles.group.visible = this.links.visible = this.hotLines.visible = this.live.group.visible = v === 'graph';
     this.system.group.visible = v === 'system';
   }
 
@@ -928,15 +896,18 @@ export class GraphScene {
     const targets: THREE.Object3D[] = [];
     for (const v of this.views.values()) if (v.pickable) targets.push(v.face ?? v.mesh);
     if (this.view === 'system') targets.push(...this.system.pickables);
-    if (this.view === 'graph') targets.push(this.dome.mesh);
+    if (this.view === 'graph') targets.push(this.articles.points, ...this.articles.bars);
+    this.raycaster.params.Points = { threshold: 0.7 };
+    const outside = this.camera.position.length() > DOME_R;
     const hits = this.raycaster.intersectObjects(targets, false);
     for (const hit of hits) {
-      if (hit.object === this.dome.mesh) {
-        const i = hit.faceIndex !== undefined && hit.faceIndex !== null ? this.dome.faceToPost[hit.faceIndex] : -1;
-        const post = i >= 0 ? this.dome.posts[i] : undefined;
-        if (post && (this.mode === 'both' || post.site === this.mode)) return postKey(post);
-        continue; // empty tile: look further along the ray
+      if (hit.object === this.articles.points) {
+        const post = hit.index === undefined ? undefined : this.articles.posts[hit.index];
+        if (!post || !this.articles.isVisible(hit.index!)) continue; // hidden dot: look further along the ray
+        if (outside && hit.point.dot(this.camera.position) <= 0) continue; // far hemisphere
+        return postKey(post);
       }
+      if (!hit.object.visible && this.articles.bars.includes(hit.object as THREE.Mesh)) continue; // culled bar
       const key = (hit.object.userData.key as string | undefined) ?? this.faceOwner(hit.object);
       if (key) return key;
     }
@@ -1018,8 +989,7 @@ export class GraphScene {
     if (this.morph) this.stepMorph();
     if (this.system.group.visible) this.system.animate(t);
     if (this.live.group.visible) this.live.tick(t);
-    const fade = this.dome.group.visible ? this.dome.updateLod(this.camera, !!this.selected || !!this.filter) : null;
-    if (fade) this.closeups.update(this.camera, fade);
+    const fade = this.articles.group.visible ? this.articles.update(this.camera) : null;
     this.depthFade(fade);
     const sky = this.photoSky.material;
     sky.opacity += (this.photoSkyTarget - sky.opacity) * 0.04;

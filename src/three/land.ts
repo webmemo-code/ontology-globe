@@ -6,7 +6,8 @@ import type { Feature, Geometry } from 'geojson';
 import { domeDirection } from '../data/globe';
 import { withHorizonCull } from './depthFade';
 
-export function buildLand(features: Feature<Geometry>[], radius: number) {
+/** Land as an equirectangular 2048x1024 canvas (lon -180..180 left to right, lat 90..-90 top to bottom). */
+export function rasteriseLand(features: Feature<Geometry>[]): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = 2048;
   canvas.height = 1024;
@@ -18,6 +19,11 @@ export function buildLand(features: Feature<Geometry>[], radius: number) {
     path(feature);
     ctx.fill();
   }
+  return canvas;
+}
+
+export function buildLand(features: Feature<Geometry>[], radius: number) {
+  const canvas = rasteriseLand(features);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
   const rows = 64;
