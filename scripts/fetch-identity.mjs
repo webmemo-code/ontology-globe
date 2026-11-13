@@ -9,7 +9,7 @@ import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const OUT = path.join(ROOT, 'public', 'identity');
-const UA = 'TravelOntologyVisualization/1.0 (https://github.com/webmemo-code/travel-ontology-visualization)';
+const UA = 'TravelOntologyVisualization/1.0 (https://github.com/webmemo-code/ontology-globe)';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Wikidata's P154 for Relais & Châteaux is the former "Relais Gourmands" mark;
