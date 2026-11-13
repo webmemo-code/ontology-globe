@@ -460,8 +460,9 @@ function Viewer({ graph }: { graph: Graph }) {
                   </p>
                 )}
                 <p>
-                Each tile is an article (<b style={{ color: '#FF9000' }}>EN</b> / <b style={{ color: '#989898' }}>DE</b>). Countries are patches sized by
-                our articles, not their area; orange-brown lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
+                Each dot is an article (<b style={{ color: '#FF9000' }}>EN</b> / <b style={{ color: '#989898' }}>DE</b>), at the place it is about.
+                Every country carries two bars, orange for Travelmemo and grey for Reisememo, as tall as its article count on a log scale.
+                Fine lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
                 them most; ones we write about everywhere stay high. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
                 {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
                 </p>

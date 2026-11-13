@@ -6,8 +6,8 @@
 // ahead with north up: shapes and orientation stay true everywhere. How much
 // room Switzerland gets is decided by the article-sized country patches
 // (cartogram below), not by distorting the map.
-import type { Graph, GraphPost } from './types';
-import { ancestorOfType, placeTree, type Vec3 } from './model';
+import type { Graph, GraphNode, GraphPost } from './types';
+import { ancestorOfType, placeTree, type PlaceTree, type Vec3 } from './model';
 import type { Footprint } from './footprint';
 
 export const DOME_R = 60;
@@ -152,6 +152,16 @@ export function assignTiles(wants: V[], order: number[], centers: V[]): number[]
   return out;
 }
 
+/** An article's country node: the Country above its deepest place entity, else null. */
+export function articleCountry(post: GraphPost, nodes: Map<string, GraphNode>, tree: PlaceTree): string | null {
+  const places = post.entities.map((k) => nodes.get(k)).filter((n) => n?.class === 'places').sort((a, b) => b!.depth - a!.depth);
+  for (const n of places) {
+    const c = ancestorOfType(tree, nodes, n!.key, 'Country');
+    if (c) return c;
+  }
+  return null;
+}
+
 /**
  * Cartogram assignment: every country gets a patch of faces sized by its
  * article count, grown around the country's real direction. Countries nearest the
@@ -173,14 +183,7 @@ export function cartogram(
   const wants = posts.map((p) => articleDirection(p, graph, pos));
   const rank = { top10: 0, top25: 1, active: 2, seen: 3, none: 4 };
 
-  const region = posts.map((p) => {
-    const places = p.entities.map((k) => nodes.get(k)).filter((n) => n?.class === 'places').sort((a, b) => b!.depth - a!.depth);
-    for (const n of places) {
-      const c = ancestorOfType(tree, nodes, n!.key, 'Country');
-      if (c) return c;
-    }
-    return null;
-  });
+  const region = posts.map((p) => articleCountry(p, nodes, tree));
   const groups = new Map<string, number[]>();
   region.forEach((r, i) => {
     if (r) groups.set(r, [...(groups.get(r) ?? []), i]);

@@ -23,15 +23,14 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 
 | Encoding | Meaning |
 |---|---|
-| Tile on the skin | One article (orange EN, grey DE); brightness = relative search tier |
-| Country patch | A country's articles as one patch of tiles, **sized by article count, not area**; fine lines trace true borders |
-| Fine lines | True country borders (Natural Earth) on the same globe, so you can see how far the article-sized patches stretch Switzerland |
+| Dot on the skin | One article at the place it is about (orange EN, grey DE); brightness and size = relative search tier |
+| Bars on a country | Article count per blog on a log scale: orange Travelmemo, grey Reisememo |
+| Dotted land and fine lines | True geography (Natural Earth); borders are brighter where we write |
 | Boxes inside | Places on shells by level: continents nearest you, sights nearest the skin |
-| Directions | Patches grow around each country's real direction from Switzerland; neighbours settle on Switzerland's rim |
 | Sky / floor | Topics form the ceiling, organizations the floor, the authors' faces the zenith |
 | Purple tubes | Trips, drawn stop by stop in itinerary order |
 | Halo / outline | Top 10% or top 25% search performer / orphan with no article yet |
-| Select | An entity lights its articles in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |
+| Select | An entity lights its article dots in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |
 
 ![The globe from outside](docs/globe-outside.jpg)
 
