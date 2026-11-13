@@ -3,7 +3,6 @@ import { GraphScene, type View } from './three/GraphScene';
 import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
 import { postKey } from './data/globe';
-import { storyCounts } from './data/storymap';
 import { loadAtlas, type Atlas } from './data/atlas';
 import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
 import { READER_ARC_COLORS, READER_COLOR, TIER_COLORS } from './three/live';
@@ -31,7 +30,6 @@ const MODES: { key: SiteMode; label: string }[] = [
 const VIEWS: { key: View; label: string }[] = [
   { key: 'system', label: '⬡ How it works' },
   { key: 'graph', label: '◍ Globe' },
-  { key: 'mirror', label: '⇄ EN ↔ DE' },
 ];
 const SITE_NAME = { travelmemo: 'Travelmemo', reisememo: 'Reisememo' };
 
@@ -85,7 +83,6 @@ function Viewer({ graph }: { graph: Graph }) {
   viewRef.current = view;
   const byKey = useMemo(() => new Map(graph.nodes.map((n) => [n.key, n])), [graph]);
   const posts = useMemo(() => new Map(graph.posts.map((p) => [postKey(p), p])), [graph]);
-  const storyTotals = useMemo(() => storyCounts(graph), [graph]);
   // Cylinder heights show AI fetches only when the snapshot carries them (GraphScene falls back to height = width).
   const hasAi = useMemo(() => graph.nodes.some((n) => Object.values(n.sites).some((s) => s?.ai !== undefined)), [graph]);
   const [atlas, setAtlas] = useState<Atlas | null>(null);
@@ -396,21 +393,7 @@ function Viewer({ graph }: { graph: Graph }) {
 
       <details className="hud bottom-left legend" open>
         <summary>Legend</summary>
-        {view === 'mirror' ? (
-          <>
-            <div>
-              <i className="split" /> {storyTotals.both} stories on both blogs
-            </div>
-            <div>
-              <i className="split en-only" /> {storyTotals.en} only in English
-            </div>
-            <div>
-              <i className="split de-only" /> {storyTotals.de} only in German
-            </div>
-            <p>One cell per story, grouped by country and sized by its stories. Top-left half English, bottom-right German; an amber outline is a story the other blog does not tell yet.</p>
-          </>
-        ) : (
-          <>
+        <>
             {/* "How it works" shows no entity boxes, so their colour key would explain nothing there. */}
             {view !== 'system' &&
               Object.entries(CLASS_NAMES).map(([k, name]) => (
@@ -466,8 +449,7 @@ function Viewer({ graph }: { graph: Graph }) {
             ) : (
               <p>Blog box volume = articles · Output height = items served, width = AI retrievals · Sphere = monthly readers, relative · output heights and widths and spheres on a log scale</p>
             )}
-          </>
-        )}
+        </>
         <button className="linkish credits-link" onClick={() => setShowCredits(!showCredits)}>
           Image credits
         </button>

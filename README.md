@@ -5,20 +5,20 @@ Interactive 3D map of the knowledge graph behind
 Every box is one entity from the ontology both blogs share: a place, a topic,
 an organization, a trip or an author.
 
-**Live:** https://webmemo-code.github.io/travel-ontology-visualization/
+**Live:** https://webmemo-code.github.io/ontology-globe/
 
 ![Inside the globe](docs/globe-inside.jpg)
 
-## Three views
+## Two views
 
-**⬡ How it works.** The entities pack into a literal cube: the ontology, the
-single source of truth. Stacked above it are the two WordPress sites, the five
+**⬡ How it works.** The entities form a small globe: the ontology, the
+single source of truth. Stacked above it are the two WordPress sites, the
 generated outputs (JSON-LD, taxonomies, EntityMap, llms.txt, OKF) and the
 groups that read them. Click any tile for a plain-language explanation.
 
 ![How it works](docs/how-it-works.jpg)
 
-**◍ Globe.** The cube unfolds into a wireframe globe. It opens from outside,
+**◍ Globe.** The small globe grows into the big one. It opens from outside,
 with Switzerland facing you; fly inside to see the places hanging on their shells.
 
 | Encoding | Meaning |
@@ -34,13 +34,6 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 | Select | An entity lights its articles in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |
 
 ![The globe from outside](docs/globe-outside.jpg)
-
-**⇄ EN ↔ DE.** Travelmemo and Reisememo as facing walls, with each entity in
-the same slot on both. Cyan bridges mark subjects both blogs cover. Amber
-bridges fade toward the blog that has not written about the subject yet: the
-translation and content backlog.
-
-![Mirror](docs/mirror.jpg)
 
 **● Live** (globe view, or `?live` in the URL): Readers of the last 30 minutes glow at their country, with a
 flowing arc to the article they read (GA4 Realtime). AI agents are

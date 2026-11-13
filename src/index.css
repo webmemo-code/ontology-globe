@@ -166,10 +166,6 @@ a.ext:hover { text-decoration: underline; }
 .explain summary:hover { opacity: 1; }
 .explain p { margin: 6px 0 0; }
 
-/* Legend swatch for the story map: a cell split on its diagonal. */
-.legend i.split { background: linear-gradient(135deg, #26C6DA 0 50%, #7E57C2 50% 100%); }
-.legend i.split.en-only { background: linear-gradient(135deg, #26C6DA 0 50%, transparent 50% 100%); outline: 1px solid #FFB300; }
-.legend i.split.de-only { background: linear-gradient(135deg, transparent 0 50%, #7E57C2 50% 100%); outline: 1px solid #FFB300; }
 /* The legend folds to its title; the same caret as the explainer. */
 .legend > summary { cursor: pointer; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.75; list-style: none; margin-bottom: 6px; }
 .legend:not([open]) > summary { margin-bottom: 0; }
