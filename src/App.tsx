@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GraphScene, type View } from './three/GraphScene';
+import { Lens } from './Lens';
 import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
 import { postKey } from './data/globe';
@@ -96,6 +97,7 @@ function Viewer({ graph }: { graph: Graph }) {
   const [atlas, setAtlas] = useState<Atlas | null>(null);
   const [photoSrc, setPhotoSrc] = useState<Record<string, string>>({});
   const [credits, setCredits] = useState<Record<string, Credit>>({});
+  const [closeups, setCloseups] = useState<Set<string>>(new Set());
   const [showCredits, setShowCredits] = useState(false);
   // ?live turns the layer on at load; ?live=demo feeds it made-up traffic (previews, recordings).
   const liveParam = new URLSearchParams(location.search).get('live');
@@ -109,6 +111,10 @@ function Viewer({ graph }: { graph: Graph }) {
     fetch('identity/credits.json')
       .then((r) => r.json())
       .then(setCredits)
+      .catch(() => {});
+    fetch('closeups/index.json')
+      .then((r) => r.json())
+      .then((a: string[]) => setCloseups(new Set(a)))
       .catch(() => {});
   }, []);
 
@@ -464,7 +470,8 @@ function Viewer({ graph }: { graph: Graph }) {
                 Every country carries two bars, orange for Travelmemo and grey for Reisememo, as tall as its article count on a log scale.
                 A selected country is outlined. Places hang inside. Topics sit on a wheel in the middle, grouped by family;
                 the more specific a topic, the further out. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
-                {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
+                {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.{' '}
+                Select a place to open its lens and browse what is inside it.
                 </p>
               </details>
             ) : (
@@ -511,6 +518,18 @@ function Viewer({ graph }: { graph: Graph }) {
       )}
 
       {tourStep === null && node && <Details node={node} graph={graph} mode={mode} byKey={byKey} onPick={setSelected} atlas={atlas} />}
+      {tourStep === null && view === 'graph' && node && node.class === 'places' && (
+        <Lens
+          node={node}
+          graph={graph}
+          mode={mode}
+          byKey={byKey}
+          onPick={setSelected}
+          titleOf={titleOf}
+          closeups={closeups}
+          anchor={() => sceneRef.current?.screenPoint(node.key) ?? null}
+        />
+      )}
       {tourStep === null && post && <Article post={post} byKey={byKey} onPick={setSelected} photo={photoSrc[selected!]} />}
       {tourStep === null && info && (
         <aside className="hud details">
