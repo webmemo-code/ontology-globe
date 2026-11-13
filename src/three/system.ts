@@ -9,7 +9,6 @@
 // falls back to even sizes.
 import * as THREE from 'three';
 import type { Feature, Geometry } from 'geojson';
-import { withHorizonCull } from './depthFade';
 import { buildLand } from './land';
 import { logoTexture } from './logo';
 import type { Vec3 } from '../data/model';
@@ -132,7 +131,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   };
 
   // The source of truth is the globe itself, small: its continents are drawn
-  // once the atlas loads (setCoastlines, setLand).
+  // once the atlas loads (setLand).
   const r = globeRadius * MINI;
   plate(CUBE_Y - r - 1.5, r + 4, 'SOURCE OF TRUTH');
   plate(TOWER_Y, 22, 'PUBLISHING');
@@ -330,31 +329,6 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     rgeo.attributes.position.needsUpdate = true;
   };
 
-  /**
-   * Borders and coast on the mini globe, in the globe view's colours: the
-   * countries we never write about a faint hairline, ours a muted brown, the
-   * coast grey. Built around the globe's own origin so the horizon cull
-   * (as on the big globe) hides the far side.
-   */
-  const setCoastlines = (faint: number[], ours: number[], coast: number[]) => {
-    const r0 = globeRadius * MINI;
-    for (const [src, color, opacity] of [
-      [faint, 0x555555, 0.25],
-      [ours, 0x8a5a14, 0.6],
-      [coast, 0x8a8a88, 0.55],
-    ] as const) {
-      const pts = new Float32Array(src.length);
-      for (let i = 0; i < src.length; i++) pts[i] = src[i] * MINI;
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-      const mat = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
-      withHorizonCull(mat, r0);
-      const lines = new THREE.LineSegments(g, mat);
-      lines.position.y = CUBE_Y;
-      lines.rotation.y = Math.PI; // same half turn as miniGlobePositions
-      group.add(lines);
-    }
-  };
 
   /** Land on the mini globe: the globe view's own land layer, scaled down. */
   const setLand = (features: Feature<Geometry>[]) => {
@@ -364,5 +338,5 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     group.add(land);
   };
 
-  return { group, labels, pickables, animate, setCoastlines, setLand };
+  return { group, labels, pickables, animate, setLand };
 }
