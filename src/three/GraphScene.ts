@@ -7,7 +7,6 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { LineSegments2 } from 'three/examples/jsm/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/examples/jsm/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { withDepthFade, withHorizonCull } from './depthFade';
 import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
@@ -18,6 +17,7 @@ import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
 import { haloTexture, makeEmblem, makePortrait } from './portrait';
 import { DOME_R, domeDirection, domeLayout, orgsOverHeadquarters, postKey, topicsOverHotspots, type Headquarters } from '../data/globe';
+import { WHEEL_R, topicWheelLayout, wheelPoint } from '../data/topicWheel';
 import { footprints, liftByCountry, type Footprint } from '../data/footprint';
 import type { Atlas } from '../data/atlas';
 import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
@@ -119,7 +119,6 @@ export class GraphScene {
   private atlas: Atlas | null = null;
   private ghost = new THREE.Group();
   private ghostFocus = new THREE.Group();
-  private ghostMats: LineMaterial[] = [];
   private globeDetail = { value: 0 };
   private photos: { tex: THREE.Texture; index: AtlasIndex } | null = null;
   // A blurred photo of the selection's best article, fading in over the sky.
@@ -127,6 +126,7 @@ export class GraphScene {
   private photoSkyKey: string | null = null;
   private photoSkyTarget = 0;
   private links = new THREE.Group();
+  private wheel = new THREE.Group();
   private focusLinks = new THREE.Group();
   private hotLines = new THREE.Group();
   private hotMats: LineMaterial[] = [];
@@ -187,7 +187,10 @@ export class GraphScene {
     this.articles = buildArticleLayer(graph, geo, this.nodes, this.tree);
     // Topics and companies hang over where they are over-represented, judged
     // on both blogs; companies with a known headquarters move there once it loads.
-    const globe = topicsOverHotspots(graph, geo, this.footprintsFor('both'));
+    const globe = topicsOverHotspots(graph, geo, this.footprintsFor('both'), ['organizations']);
+    // Topics have no latitude: they sit on the wheel in the middle instead.
+    const wheel = topicWheelLayout(graph);
+    wheel.pos.forEach((p, k) => globe.set(k, p));
     this.layouts = {
       graph: globe,
       system: miniGlobePositions(globe),
@@ -197,7 +200,8 @@ export class GraphScene {
     this.buildBackdrop();
     this.buildNodes();
     this.buildLinks();
-    this.system = buildSystem(graph, graph.system ?? null, DOME_R);
+    this.buildWheel(wheel.sectors);
+    this.system =buildSystem(graph, graph.system ?? null, DOME_R);
     // The mini globe wears the globe view's article shell, at the same scale and turn.
     const shell = this.articles.mini();
     shell.scale.setScalar(MINI);
@@ -206,7 +210,7 @@ export class GraphScene {
     this.system.group.add(shell);
     this.system.labels.forEach((l, i) => this.labels.set(`sys-label:${i}`, l.text, l.pos, l.priority, { px: l.px, color: l.color, views: ['system'], always: true }));
     this.articles.group.add(this.ghost, this.ghostFocus);
-    this.scene.add(this.articles.group, this.links, this.focusLinks, this.hotLines, this.system.group, this.live.group);
+    this.scene.add(this.articles.group, this.links, this.wheel, this.focusLinks, this.hotLines, this.system.group, this.live.group);
     this.labelScene.add(this.labels.group);
     this.showViewDecor();
     this.applyStyle();
@@ -308,6 +312,41 @@ export class GraphScene {
       tube.material.depthWrite = false;
       withDetailFade(tube.material, this.globeDetail, 0.06);
       this.links.add(tube);
+    }
+  }
+
+  /** The topic wheel's rings, spokes, ticks and family labels; built once. */
+  private buildWheel(sectors: { name: string; from: number; to: number; mid: number }[]) {
+    const R = WHEEL_R + 1;
+    const circle = (r: number, n = 128) => {
+      const s: number[] = [];
+      for (let i = 0; i < n; i++) {
+        const a = wheelPoint((2 * Math.PI * i) / n, r);
+        const b = wheelPoint((2 * Math.PI * (i + 1)) / n, r);
+        s.push(a.x, 0, a.z, b.x, 0, b.z);
+      }
+      return s;
+    };
+    const radial = (a: number, r0: number, r1: number) => {
+      const p = wheelPoint(a, r0);
+      const q = wheelPoint(a, r1);
+      return [p.x, 0, p.z, q.x, 0, q.z];
+    };
+    const add = (segs: number[], opacity: number) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
+      const mat = new THREE.LineBasicMaterial({ color: '#989898', transparent: true, depthWrite: false, opacity });
+      withDetailFade(mat, this.globeDetail, 0.05);
+      this.wheel.add(new THREE.LineSegments(g, mat));
+    };
+    add(circle(R), 0.7);
+    add([...circle(5), ...circle((5 + WHEEL_R) / 2)], 0.25);
+    add(sectors.flatMap((s) => radial(s.from - 0.03, 3, R)), 0.45);
+    const ticks: number[] = [];
+    for (let i = 0; i < 96; i++) ticks.push(...radial((2 * Math.PI * i) / 96, R, R + (i % 4 === 0 ? 1.1 : 0.5)));
+    add(ticks, 0.6);
+    for (const s of sectors) {
+      this.labels.set(`wheel:${s.name}`, s.name.toUpperCase(), { ...wheelPoint(s.mid, WHEEL_R + 4), y: 0.6 }, 2500, { px: 12, color: '#BDBDBD', views: ['graph'] });
     }
   }
 
@@ -456,39 +495,7 @@ export class GraphScene {
     this.atlas = atlas;
     this.ghost.clear();
     this.articles.setAtlas(atlas);
-    const covered = new Set(atlas.byNode.values());
-    const faint: number[] = [];
-    const ours: number[] = [];
-    for (const f of atlas.features) borderSegments(f.geometry, covered.has(f) ? ours : faint);
-    // Continent outlines carry the geography, so they get real line weight
-    // (a muted brown: anything brighter crosses the bloom threshold and glows)
-    // (screen-space width); the countries we never write about stay a hairline.
-    const { clientWidth: w, clientHeight: h } = this.container;
-    this.ghostMats = [];
-    for (const [segs, color, opacity, width] of [
-      [faint, 0x555555, 0.25, 1.0],
-      [ours, 0x8a5a14, 0.6, 1.4],
-    ] as const) {
-      const mat = new LineMaterial({ color, linewidth: width, transparent: true, opacity, depthWrite: false });
-      withDepthFade(mat, 0.7, 0.75);
-      withHorizonCull(mat, GHOST_R);
-      withDetailFade(mat, this.globeDetail, 0.4, 0.8);
-      mat.resolution.set(w, h);
-      this.ghostMats.push(mat);
-      const lines = new LineSegments2(new LineSegmentsGeometry().setPositions(segs), mat);
-      lines.renderOrder = -1;
-      this.ghost.add(lines);
-    }
-    const coast: number[] = [];
-    borderSegments(atlas.coast, coast);
-    const coastMat = new LineMaterial({ color: 0x8a8a88, linewidth: 1.5, transparent: true, opacity: 0.55, depthWrite: false });
-    coastMat.resolution.set(w, h);
-    withHorizonCull(coastMat, GHOST_R);
-    this.ghostMats.push(coastMat);
-    const coastLines = new LineSegments2(new LineSegmentsGeometry().setPositions(coast), coastMat);
-    coastLines.renderOrder = -1;
-    this.ghost.add(coastLines);
-    this.system.setCoastlines(faint, ours, coast);
+    // No border or coast lines: the dotted land draws the map; only a selection is outlined.
     this.system.setLand(atlas.features);
     this.refreshGhostFocus();
     this.refreshLive(); // readers are placed by country, which needs the atlas
@@ -563,7 +570,7 @@ export class GraphScene {
     scaleBox(b, 1);
     const m = b.mesh.material;
     // Authors sit on every article, so their tier says little; keep them from outshining the map.
-    m.emissiveIntensity = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : 1);
+    m.emissiveIntensity = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : node.class === 'topics' ? 0.22 : 1); // topics sit close together on the wheel: full glow blooms into one blob
     // Orphans are outlines only: in the ontology, no article yet.
     m.opacity = b.face || orphan ? 0 : dim ? 0.07 : 0.85;
     const lo = b.outline.material;
@@ -571,7 +578,7 @@ export class GraphScene {
     lo.userData.base = lo.color.clone(); // depthFade scales from here
     lo.opacity = b.face ? 0 : !present ? 0.1 : dim ? 0.08 : orphan ? 0.45 : 0.9;
     const tier = present && !orphan && !dim && !b.face ? s!.perf : 'none';
-    b.halo.visible = (tier === 'top10' || tier === 'top25') && this.view !== 'system';
+    b.halo.visible = (tier === 'top10' || tier === 'top25') && this.view !== 'system' && node.class !== 'topics';
     b.halo.scale.setScalar(b.size * (tier === 'top10' ? 3.4 : 2.4));
     b.halo.material.opacity = tier === 'top10' ? 0.6 : 0.3;
     if (b.face) {
@@ -764,8 +771,8 @@ export class GraphScene {
         const b = this.views.get(k)?.base;
         if (b) segs.push(a.x, a.y, a.z, b.x, b.y, b.z);
       }
-      // ...and from the entity out to each of its articles on the skin.
-      for (const p of postsFor(this.graph, this.mode)) {
+      // ...and from the entity out to each of its articles on the skin (not for a topic: hundreds).
+      for (const p of v.node.class === 'topics' ? [] : postsFor(this.graph, this.mode)) {
         if (!p.entities.includes(v.key)) continue;
         const c = this.articles.at(postKey(p));
         if (!c) continue;
@@ -821,6 +828,14 @@ export class GraphScene {
       const eye = out.clone().multiplyScalar(DOME_R * reach).addScaledVector(across, DOME_R * 0.22).addScaledVector(up, DOME_R * 0.18);
       return this.flyTo(kf(eye.toArray(), out.multiplyScalar(DOME_R * 0.96).toArray()), 1800);
     }
+    // A topic sits on the wheel: look across it from above, from the far side.
+    if (v.node.class === 'topics') {
+      const d = new THREE.Vector3(p.x, 0, p.z);
+      if (d.lengthSq() < 1e-4) d.set(0, 0, -1);
+      d.normalize();
+      const t = new THREE.Vector3(p.x, p.y, p.z);
+      return this.flyTo(kf([-d.x * 30, 36, -d.z * 30], t.clone().lerp(new THREE.Vector3(), 0.15).toArray()), 1800);
+    }
     // Inside the dome, stand behind the entity on the line from its articles
     // and look past it: the tag sits in the foreground, a little off-centre,
     // with its stories glowing behind it. Not all of them fit, and need not.
@@ -863,7 +878,7 @@ export class GraphScene {
 
   private showViewDecor() {
     const v = this.view;
-    this.articles.group.visible = this.links.visible = this.hotLines.visible = this.live.group.visible = v === 'graph';
+    this.articles.group.visible = this.links.visible = this.wheel.visible = this.hotLines.visible = this.live.group.visible = v === 'graph';
     this.system.group.visible = v === 'system';
   }
 
@@ -943,7 +958,6 @@ export class GraphScene {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.bloom.updateSize(w, h);
-    this.ghostMats.forEach((m) => m.resolution.set(w, h));
     this.hotMats.forEach((m) => m.resolution.set(w, h));
   };
 

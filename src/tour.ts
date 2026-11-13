@@ -37,7 +37,7 @@ export const TOUR: TourStop[] = [
   },
   {
     title: 'The small globe grows into the big one',
-    text: 'Every dot on its skin is one article, at the place it is about: orange for English, grey for German. Fine lines trace the real coastlines.',
+    text: 'Every dot on its skin is one article, at the place it is about: orange for English, grey for German. The dotted land is the real map.',
   },
   {
     title: 'Every country carries two bars',
@@ -55,8 +55,8 @@ export const TOUR: TourStop[] = [
     select: 'trips/glacier-express',
   },
   {
-    title: 'Topics are the sky',
-    text: 'Look up: themes like food, hiking or boutique hotels form the ceiling. One article can be about Zurich and about restaurants at the same time, and the map records both.',
+    title: 'Topics form a wheel in the middle',
+    text: 'Themes like food, hiking or boutique hotels have no place on the map, so they sit on a wheel inside the globe, grouped by family: the broader the theme, the nearer the centre. Select one and bold lines run to the countries where we write about it most.',
     select: 'topics/culinary-tourism',
   },
   {

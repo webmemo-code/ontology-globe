@@ -25,9 +25,9 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 |---|---|
 | Dot on the skin | One article at the place it is about (orange EN, grey DE); brightness and size = relative search tier |
 | Bars on a country | Article count per blog on a log scale: orange Travelmemo, grey Reisememo |
-| Dotted land and fine lines | True geography (Natural Earth); borders are brighter where we write |
+| Dotted land | True geography (Natural Earth); a selected country is outlined |
 | Boxes inside | Places on shells by level: continents nearest you, sights nearest the skin |
-| Sky / floor | Topics form the ceiling, organizations the floor, the authors' faces the zenith |
+| Topic wheel | Topics sit on a level wheel inside the globe: direction = family, distance from the centre = how specific. Companies hang over their headquarters, the authors' faces at the zenith |
 | Purple tubes | Trips, drawn stop by stop in itinerary order |
 | Halo / outline | Top 10% or top 25% search performer / orphan with no article yet |
 | Select | An entity lights its article dots in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |

@@ -28,8 +28,8 @@ const MODES: { key: SiteMode; label: string }[] = [
   { key: 'reisememo', label: 'Reisememo DE' },
 ];
 const VIEWS: { key: View; label: string }[] = [
-  { key: 'system', label: '⬡ How it works' },
   { key: 'graph', label: '◍ Globe' },
+  { key: 'system', label: '⬡ How it works' },
 ];
 type ReadingRow = {
   id: string; kind: 'reader' | 'bot'; site: SiteKey; who: string; what: string; pick: string | null;
@@ -462,8 +462,8 @@ function Viewer({ graph }: { graph: Graph }) {
                 <p>
                 Each dot is an article (<b style={{ color: '#FF9000' }}>EN</b> / <b style={{ color: '#989898' }}>DE</b>), at the place it is about.
                 Every country carries two bars, orange for Travelmemo and grey for Reisememo, as tall as its article count on a log scale.
-                Fine lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
-                them most; ones we write about everywhere stay high. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
+                A selected country is outlined. Places hang inside. Topics sit on a wheel in the middle, grouped by family;
+                the more specific a topic, the further out. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
                 {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
                 </p>
               </details>
