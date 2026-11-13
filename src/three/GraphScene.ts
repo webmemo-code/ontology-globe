@@ -902,6 +902,19 @@ export class GraphScene {
     this.controls.autoRotate = on;
   }
 
+  /** Viewport pixel of an entity's spot on the skin; null when hidden behind the globe or off screen. */
+  screenPoint(key: string): { x: number; y: number } | null {
+    const base = this.views.get(key)?.base;
+    if (!base) return null;
+    const p = new THREE.Vector3(base.x, base.y, base.z).normalize().multiplyScalar(DOME_R);
+    const eye = this.camera.position;
+    if (eye.length() > DOME_R && p.dot(eye) <= 0) return null;
+    p.project(this.camera);
+    if (p.z > 1 || Math.abs(p.x) > 1.05 || Math.abs(p.y) > 1.05) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  }
+
   // ---------- events ----------
 
   private pick(ev: PointerEvent): string | null {
