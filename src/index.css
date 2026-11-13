@@ -160,6 +160,8 @@ a.ext:hover { text-decoration: underline; }
 .legend .live-legend > div { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 4px; }
 .live-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .live-legend i { flex: none; }
+.live-legend i.line { width: 26px; height: 0; border-top: 2px solid var(--orange); background: none; box-shadow: none; border-radius: 0; }
+.live-legend i.line.dashed { border-top-style: dashed; }
 .live-legend i.diamond { width: 7px; height: 7px; border: 2px solid; border-radius: 1px; transform: rotate(45deg); background: none; box-shadow: none; }
 
 .outline { margin: 0; padding-left: 1.3em; display: grid; gap: 4px; line-height: 1.35; }
