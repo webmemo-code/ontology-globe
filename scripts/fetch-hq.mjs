@@ -8,7 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-const UA = 'TravelOntologyVisualization/1.0 (https://github.com/webmemo-code/travel-ontology-visualization)';
+const UA = 'TravelOntologyVisualization/1.0 (https://github.com/webmemo-code/ontology-globe)';
 
 async function entity(q) {
   const r = await fetch(`https://www.wikidata.org/wiki/Special:EntityData/${q}.json`, { headers: { 'User-Agent': UA } });

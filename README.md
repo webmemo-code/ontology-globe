@@ -5,7 +5,7 @@ Interactive 3D map of the knowledge graph behind
 Every box is one entity from the ontology both blogs share: a place, a topic,
 an organization, a trip or an author.
 
-**Live:** https://webmemo-code.github.io/travel-ontology-visualization/
+**Live:** https://webmemo-code.github.io/ontology-globe/
 
 ![Inside the globe](docs/globe-inside.jpg)
 
