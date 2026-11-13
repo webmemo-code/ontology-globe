@@ -1,10 +1,12 @@
 // The live layer on the globe: readers as glowing dots at their country (city
 // jittered, never a precise location) with a flowing arc to the article
-// they read (ending where the article's photos were taken, else at its country's centre); AI agents as satellites coloured by what they fetch for
-// (training, search, a user's question). A satellite hovers, geostationary,
-// over its operator's headquarters, drops a thin tether to the country its
-// requests came from, and beams to the article or entity it fetched. Bots
-// with no known operator keep orbiting.
+// they read (ending where the article's photos were taken, else at its country's
+// centre); AI agents as satellites coloured by what they fetch for (training,
+// search, a user's question). One satellite per bot and request country: it
+// hovers over that country's centre on a thin tether, markers sharing a country
+// spread on a small ring, and it beams to what that bot fetched from there. A bot
+// with no known country falls back to its operator's headquarters, else parks
+// above the north pole; nothing orbits, since no data justifies a trajectory.
 // What is being read glows. An article gets a pulsing ring where it is set (its
 // photos' location, else its country) in its blog's colour when a person reads it (orange Travelmemo, grey Reisememo), else the bot's tier colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
@@ -32,10 +34,15 @@ export const READER_COLOR = '#FF9000';
 // right at that edge, so dots use a dimmed copy (local rings dim their blog colour the same way)
 // and stay crisp in a crowd.
 const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
-/** A reader's line takes its blog's colour, so the two audiences read apart. */
-export const READER_ARC_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#989898' };
-/** A read article's ring, by blog; Reisememo's grey is lighter than its arc so it holds up on the pale tiles. */
-export const READER_RING_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#BDBDBD' };
+/** Both blogs read orange; the line style tells them apart (READER_LINE_STYLE). */
+export const READER_ARC_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#FF9000' };
+/** A read article's ring, by blog. */
+export const READER_RING_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#FF9000' };
+/** Dash [size, gap] of a reader's line by blog: Travelmemo near-solid, Reisememo clearly dashed. */
+export const READER_LINE_STYLE: Record<SiteKey, { far: [number, number]; local: [number, number] }> = {
+  travelmemo: { far: [6, 0.5], local: [1.6, 0.2] },
+  reisememo: { far: [1.6, 1.6], local: [0.45, 0.45] },
+};
 export const TIER_COLORS: Record<BotTier, string> = { training: '#4C96F2', search: '#8FBEFF', user: '#2F7DE1', other: '#9D9C9A' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
@@ -51,7 +58,7 @@ function hover(op: string, hq: [number, number]): [number, number] {
   return [37.6 + 6 * Math.sin(a), -122.2 + 7.5 * Math.cos(a)];
 }
 
-/** Small stable hash, so a city or bot keeps its jitter and orbit across polls. */
+/** Small stable hash, so a city keeps its jitter across polls. */
 function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
@@ -130,17 +137,18 @@ function ringTexture(): THREE.CanvasTexture {
 
 interface Satellite {
   key: string;
+  bot: string;
+  /** Request country (alpha-2) it hovers over, or '' for the headquarters / parked fallback. */
+  country: string;
+  /** That country's centre as [lat, lon]; null in the fallback. */
+  centre: [number, number] | null;
   mesh: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
-  /** Pinned over the operator; null for an unknown operator, which orbits instead. */
-  anchor: THREE.Vector3 | null;
-  axis: THREE.Vector3;
-  start: THREE.Vector3;
-  speed: number;
+  anchor: THREE.Vector3;
   phase: number;
   targets: { at: THREE.Vector3; fresh: number }[];
   beams: THREE.LineSegments<THREE.BufferGeometry, THREE.LineDashedMaterial>;
-  /** Request countries, as points on the surface. */
-  origins: Map<string, THREE.Vector3>;
+  /** The one tether: straight down to the country centre on the skin. */
+  origin: THREE.Vector3 | null;
   tethers: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 }
 
@@ -178,20 +186,21 @@ export class LiveLayer {
             : b.kind === 'entity' && b.entity
               ? toVec(ctx.entity(b.entity))
               : null;
-        const sat = this.satellite(b.bot);
+        const centre = b.country && ctx.atlas ? countryCentre(ctx.atlas, b.country) : null;
+        const sat = this.satellite(b.bot, centre ? b.country!.toUpperCase() : '', centre);
         const color = TIER_COLORS[tierOf(b.bot)];
         if (at) sat.targets.push({ at, fresh: 1 - (0.7 * Math.min(b.seconds_ago, WINDOW_S)) / WINDOW_S });
         if (at && b.kind === 'post') this.mark(`${site}:${b.post}`, at, color, ctx.name({ site, post: b.post }));
         if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) this.entityHits.set(b.entity!, color);
-        const centre = b.country && ctx.atlas && !sat.origins.has(b.country) ? countryCentre(ctx.atlas, b.country) : null;
-        if (centre) sat.origins.set(b.country!, new THREE.Vector3(...domeDirection(centre[0], centre[1])).multiplyScalar(DOME_R * 1.01));
       }
     }
     this.drawDots();
     this.drawTargets();
+    this.placeSatellites();
     for (const s of this.sats.values()) {
       s.beams.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, s.targets.length) * 6), 3));
-      s.tethers.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(Math.max(1, s.origins.size) * 6), 3));
+      s.tethers.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      s.tethers.visible = !!s.origin;
     }
   }
 
@@ -223,10 +232,11 @@ export class LiveLayer {
     const lift = DOME_R * (local ? 1.02 : 1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
     const ctrl = mid.lengthSq() > 1 ? mid.setLength(lift) : new THREE.Vector3(0, lift, 0);
     const curve = new THREE.QuadraticBezierCurve3(from, ctrl, to.clone().multiplyScalar(1.005));
+    const dash = READER_LINE_STYLE[site][local ? 'local' : 'far'];
     const { mat, shift } = flowingDash({
       color: READER_ARC_COLORS[site],
-      dashSize: local ? 0.5 : 2.2,
-      gapSize: local ? 0.35 : 1.2,
+      dashSize: dash[0],
+      gapSize: dash[1],
       transparent: true,
       opacity: local ? 0.8 : 0.95,
       depthWrite: false,
@@ -283,18 +293,11 @@ export class LiveLayer {
     }
   }
 
-  private satellite(bot: string): Satellite {
-    const have = this.sats.get(bot);
+  private satellite(bot: string, country: string, centre: [number, number] | null): Satellite {
+    const id = `${bot}|${country}`;
+    const have = this.sats.get(id);
     if (have) return have;
-    const tier = tierOf(bot);
-    const color = TIER_COLORS[tier];
-    const h = hash(bot);
-    const op = operatorOf(bot);
-    const at = op ? hover(op[0], op[1].hq) : null;
-    const anchor = at ? new THREE.Vector3(...domeDirection(at[0], at[1])).multiplyScalar(DOME_R * TIER_ORBIT[tier]) : null;
-    const axis = new THREE.Vector3(Math.cos(h * 9) * 0.5, 1, Math.sin(h * 7) * 0.5).normalize();
-    const start = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), h * Math.PI * 2);
-    start.sub(axis.clone().multiplyScalar(start.dot(axis))).setLength(DOME_R * TIER_ORBIT[tier]);
+    const color = TIER_COLORS[tierOf(bot)];
     const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(2.4), new THREE.MeshBasicMaterial({ color, wireframe: true }));
     const { mat: beamMat, shift } = flowingDash({ color, dashSize: 0.8, gapSize: 0.8, transparent: true, depthWrite: false });
     const beams = new THREE.LineSegments(new THREE.BufferGeometry(), beamMat);
@@ -303,14 +306,45 @@ export class LiveLayer {
     withDepthFade(tetherMat, 0.6, 0.6);
     const tethers = new THREE.LineSegments(new THREE.BufferGeometry(), tetherMat);
     this.group.add(mesh, beams, tethers);
-    const sat: Satellite = { key: `live-bot:${bot}`, mesh, anchor, axis, start, speed: 0.05 + 0.04 * h, phase: h * 6.28, targets: [], beams, origins: new Map(), tethers };
-    this.sats.set(bot, sat);
-    const name = op && op[1].name !== botName(bot) ? `${botName(bot)} · ${op[1].name}` : botName(bot);
-    this.labels.set(sat.key, name, toPlain(anchor ?? start), 6000, { px: 13, color, views: ['graph'] });
+    const sat: Satellite = {
+      key: `live-bot:${id}`, bot, country, centre, mesh, anchor: new THREE.Vector3(), phase: hash(id) * 6.28,
+      targets: [], beams, origin: null, tethers,
+    };
+    this.sats.set(id, sat);
     return sat;
   }
 
-  /** Orbits, beams and pulses; call every frame. */
+  /** Position and label every marker; markers sharing a country spread evenly on a ring round its centre. */
+  private placeSatellites() {
+    const byCountry = new Map<string, Satellite[]>();
+    for (const s of this.sats.values()) if (s.centre) byCountry.set(s.country, [...(byCountry.get(s.country) ?? []), s]);
+    const spot = new Map<Satellite, [number, number]>();
+    for (const group of byCountry.values()) {
+      group.sort((a, b) => (a.bot < b.bot ? -1 : a.bot > b.bot ? 1 : 0));
+      const [lat, lon] = group[0].centre!;
+      const r = group.length < 2 ? 0 : 5 + 1.5 * Math.max(0, group.length - 4);
+      group.forEach((s, i) => {
+        const a = (i / group.length) * Math.PI * 2;
+        const la = Math.max(-89, Math.min(89, lat + r * Math.sin(a)));
+        spot.set(s, [la, lon + (r * Math.cos(a)) / Math.max(0.3, Math.cos((la * Math.PI) / 180))]);
+      });
+    }
+    for (const s of this.sats.values()) {
+      const tier = tierOf(s.bot);
+      const op = operatorOf(s.bot);
+      let at = spot.get(s) ?? [89, 0];
+      let suffix = s.country ? ` · ${s.country}` : '';
+      if (s.centre) s.origin = new THREE.Vector3(...domeDirection(s.centre[0], s.centre[1])).multiplyScalar(DOME_R * 1.01);
+      else if (op) {
+        at = hover(op[0], op[1].hq);
+        suffix = op[1].name !== botName(s.bot) ? ` · ${op[1].name}` : '';
+      }
+      s.anchor.set(...domeDirection(at[0], at[1])).multiplyScalar(DOME_R * TIER_ORBIT[tier]);
+      this.labels.set(s.key, botName(s.bot) + suffix, toPlain(s.anchor), 6000, { px: 13, color: TIER_COLORS[tier], views: ['graph'] });
+    }
+  }
+
+  /** Hover, beams and pulses; call every frame. */
   tick(t: number) {
     for (const dot of this.dots) dot.material.opacity = 0.8 + 0.2 * Math.sin(t * 2.2 + dot.userData.phase);
     // Target rings breathe outward and fade, like a ping.
@@ -322,16 +356,13 @@ export class LiveLayer {
     // Dashes flow toward the article. Each arc has its own uniform; they share one clock.
     for (const arc of this.arcs) (arc.userData.shift as { value: number }).value = -t * 3;
     for (const s of this.sats.values()) {
-      if (s.anchor) s.mesh.position.copy(s.anchor).multiplyScalar(1 + 0.012 * Math.sin(t * 1.3 + s.phase)); // a gentle hover
-      else s.mesh.position.copy(s.start).applyAxisAngle(s.axis, t * s.speed);
+      s.mesh.position.copy(s.anchor).multiplyScalar(1 + 0.012 * Math.sin(t * 1.3 + s.phase)); // a gentle hover
       s.mesh.rotation.set(t * 0.7, t * 1.1, 0);
       this.labels.move(s.key, toPlain(s.mesh.position.clone().multiplyScalar(1.06)));
       const tie = s.tethers.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
-      if (tie) {
-        [...s.origins.values()].forEach((o, i) => {
-          tie.setXYZ(i * 2, s.mesh.position.x, s.mesh.position.y, s.mesh.position.z);
-          tie.setXYZ(i * 2 + 1, o.x, o.y, o.z);
-        });
+      if (tie && s.origin) {
+        tie.setXYZ(0, s.mesh.position.x, s.mesh.position.y, s.mesh.position.z);
+        tie.setXYZ(1, s.origin.x, s.origin.y, s.origin.z);
         tie.needsUpdate = true;
       }
       const pos = s.beams.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
@@ -377,7 +408,7 @@ export class LiveLayer {
       s.mesh.material.dispose();
       s.beams.geometry.dispose();
       s.beams.material.dispose();
-      this.labels.set(s.key, null, toPlain(s.start), 0);
+      this.labels.set(s.key, null, toPlain(s.anchor), 0);
     }
     this.sats.clear();
   }

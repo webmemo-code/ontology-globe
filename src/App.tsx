@@ -5,7 +5,7 @@ import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { loadAtlas, type Atlas } from './data/atlas';
 import { botName, citiesReady, demoLive, fetchLive, tierOf, type BotTier, type LiveBySite, type LiveSnapshot } from './data/live';
-import { READER_ARC_COLORS, READER_COLOR, TIER_COLORS } from './three/live';
+import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
 
@@ -428,10 +428,10 @@ function Viewer({ graph }: { graph: Graph }) {
                     <i style={{ background: READER_COLOR, borderRadius: '50%', color: READER_COLOR }} /> Reader now, one dot per reader city (at the city where GA4 names it, Switzerland; spread around the country centre elsewhere), with a line to where the article is set; a short hop when it stays nearby
                   </span>
                   <span>
-                    <i style={{ background: READER_ARC_COLORS.reisememo }} /> Reisememo read: line and ring
+                    <i className="line" /> Travelmemo read: solid line
                   </span>
                   <span>
-                    <i style={{ background: READER_ARC_COLORS.travelmemo }} /> Travelmemo read: line and ring
+                    <i className="line dashed" /> Reisememo read: dashed line
                   </span>
                 </div>
                 <div>
@@ -455,7 +455,7 @@ function Viewer({ graph }: { graph: Graph }) {
                 <summary>How to read the map</summary>
                 {live && (
                   <p>
-                    AI agents hover over the company that runs them; a thin line drops to the country the request came from. A ring on the skin is an article being
+                    AI agents hover over the country their request came from, on a thin tether. A ring on the skin is an article being
                     read or fetched, where the article is set; an entity an agent fetches lights up its own outline in the agent's colour.
                   </p>
                 )}

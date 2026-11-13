@@ -36,12 +36,14 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 ![The globe from outside](docs/globe-outside.jpg)
 
 **● Live** (globe view, or `?live` in the URL): Readers of the last 30 minutes glow at their country, with a
-flowing arc to the article they read (GA4 Realtime). AI agents are
-satellites coloured by purpose (training, search, on a user's behalf): each
-hovers over its operator's headquarters, drops a thin line to the country its
-request came from (Cloudflare on Travelmemo, IPinfo Lite on Reisememo), and beams to the article or entity it fetched. 
+flowing line to the article they read (GA4 Realtime): solid orange for Travelmemo,
+dashed orange for Reisememo. AI agents are satellites coloured by purpose
+(training, search, on a user's behalf): each hovers over the country its request
+came from (Cloudflare on Travelmemo, IPinfo Lite on Reisememo) on a thin tether,
+and beams to the article or entity it fetched from there. When the country is
+unknown it hovers over the operator's headquarters instead.
 
-Bots whose operator is not known for certain keep orbiting. Agents on article pages are not
+Agents on article pages are not
 seen, because the page cache serves those without PHP. `?live=demo` feeds
 made-up traffic for previews and recordings.
 
