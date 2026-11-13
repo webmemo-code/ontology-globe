@@ -184,7 +184,7 @@ export function createCloseups(dome: Dome): Closeups {
       }
       // The tile's own paint still speaks: a hidden tile (other blog) shows no
       // close-up, a dimmed one (outside a selection) a fainter one, and the
-      // photo carries half of the tile's tint (gold when selected, EN/DE otherwise).
+      // photo carries half of the tile's tint (warm white when selected, EN/DE otherwise).
       const [r, g, b, alpha] = [col.getX(p.f * 3), col.getY(p.f * 3), col.getZ(p.f * 3), col.getW(p.f * 3)];
       const top = Math.max(r, g, b, 1e-3);
       s.mesh.material.color.setRGB(r / top, g / top, b / top).lerp(WHITE, 0.5);

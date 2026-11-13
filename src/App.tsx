@@ -4,7 +4,7 @@ import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { loadAtlas, type Atlas } from './data/atlas';
-import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
+import { botName, citiesReady, demoLive, fetchLive, tierOf, type BotTier, type LiveBySite, type LiveSnapshot } from './data/live';
 import { READER_ARC_COLORS, READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
@@ -31,6 +31,14 @@ const VIEWS: { key: View; label: string }[] = [
   { key: 'system', label: '⬡ How it works' },
   { key: 'graph', label: '◍ Globe' },
 ];
+type ReadingRow = {
+  id: string; kind: 'reader' | 'bot'; site: SiteKey; who: string; what: string; pick: string | null;
+  tier?: BotTier; route?: string;
+};
+const TIER_LABELS: Record<BotTier, string> = { training: 'training', search: 'search', user: 'for a user', other: 'other' };
+const ROUTE_LABELS: Record<string, string> = { okf: 'OKF', ontology: 'EntityMap', llms: 'llms.txt', 'llms.txt': 'llms.txt', jsonld: 'JSON-LD' };
+const routeLabel = (route?: string) => (route ? (ROUTE_LABELS[route] ?? route) : '');
+
 const SITE_NAME = { travelmemo: 'Travelmemo', reisememo: 'Reisememo' };
 
 interface Credit {
@@ -182,12 +190,12 @@ function Viewer({ graph }: { graph: Graph }) {
   // being read. No counts.
   const reading = useMemo(() => {
     if (!liveState) return [];
-    const rows: { id: string; who: string; color: string; what: string; pick: string | null }[] = [];
+    const rows: ReadingRow[] = [];
     const scoped = Object.entries(liveState).filter(([site]) => mode === 'both' || site === mode) as [SiteKey, LiveSnapshot][];
     for (const [site, snap] of scoped)
       for (const r of snap.readers) {
         const p = r.post ? posts.get(`post:${site}:${r.post}`) : undefined;
-        if (p) rows.push({ id: `r:${site}:${r.country}:${r.city}:${r.post}`, who: r.city ? `${r.city} · ${r.country}` : r.country, color: READER_ARC_COLORS[site], what: titleOf(p), pick: postKey(p) });
+        if (p) rows.push({ id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: r.city ? `${r.city} · ${r.country}` : r.country, what: titleOf(p), pick: postKey(p) });
       }
     const readerRows = rows.splice(0);
     const bots = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
@@ -197,8 +205,11 @@ function Viewer({ graph }: { graph: Graph }) {
       if (!p && !n) continue;
       rows.push({
         id: `b:${site}:${b.bot}:${b.route}:${b.post ?? b.entity}`,
+        kind: 'bot',
+        site,
         who: botName(b.bot),
-        color: TIER_COLORS[tierOf(b.bot)],
+        tier: tierOf(b.bot),
+        route: b.route,
         what: p ? titleOf(p) : labelFor(n!, site),
         pick: p ? postKey(p) : n!.key,
       });
@@ -287,6 +298,7 @@ function Viewer({ graph }: { graph: Graph }) {
     <div className="app">
       <div ref={host} className="stage" />
 
+      <div className="left-col">
       <header className="hud top-left">
         <h1>
           <span>Travel</span> Ontology
@@ -329,10 +341,18 @@ function Viewer({ graph }: { graph: Graph }) {
               {reading.map((r) => (
                 <li key={r.id}>
                   <button onClick={() => r.pick && pickHit(r.pick)} title={r.what}>
-                    <span className="who" style={{ color: r.color }}>
-                      {r.who}
-                    </span>
-                    <span className="what">{r.what}</span>
+                    <span className="who">{r.who}</span>
+                    <span className="what">→ {r.what}</span>
+                    {r.kind === 'reader' ? (
+                      <span className="tags tags-reader">
+                        <span className="tag tag-reader">{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
+                      </span>
+                    ) : (
+                      <span className="tags">
+                        <span className="tag tag-bot">{TIER_LABELS[r.tier!]}</span>
+                        {routeLabel(r.route) && <span className="route-pill">{routeLabel(r.route)}</span>}
+                      </span>
+                    )}
                   </button>
                 </li>
               ))}
@@ -440,8 +460,8 @@ function Viewer({ graph }: { graph: Graph }) {
                   </p>
                 )}
                 <p>
-                Each tile is an article (<b style={{ color: '#26C6DA' }}>EN</b> / <b style={{ color: '#B388FF' }}>DE</b>). Countries are patches sized by
-                our articles, not their area; gold lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
+                Each tile is an article (<b style={{ color: '#FF9000' }}>EN</b> / <b style={{ color: '#989898' }}>DE</b>). Countries are patches sized by
+                our articles, not their area; orange-brown lines trace true borders, brighter where we write. Places hang inside. Topics sink towards where we write about
                 them most; ones we write about everywhere stay high. Companies sit over their headquarters. Each entity is a cylinder: width = our articles on it,
                 {hasAi ? 'height = how often AI agents fetched it (a flat disc: not yet).' : 'height = width until AI fetch data arrives.'} Halo = top search performer · outline = no article yet.
                 </p>
@@ -454,6 +474,7 @@ function Viewer({ graph }: { graph: Graph }) {
           Image credits
         </button>
       </details>
+      </div>
 
       {showCredits && (
         <aside className="hud credits">
@@ -588,7 +609,7 @@ function Article({ post, byKey, onPick, photo }: { post: GraphPost; byKey: Map<s
   return (
     <aside className="hud details">
       {photo && <img className="hero" src={photo} alt="" loading="lazy" />}
-      <small style={{ color: post.site === 'reisememo' ? '#B388FF' : '#26C6DA' }}>Article · {SITE_NAME[post.site]}</small>
+      <small style={{ color: post.site === 'reisememo' ? '#989898' : '#FF9000' }}>Article · {SITE_NAME[post.site]}</small>
       <h2>{titleOf(post)}</h2>
       <div className="badges">
         <span className={`perf ${post.perf}`}>{PERF_TEXT[post.perf]}</span>

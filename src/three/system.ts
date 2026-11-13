@@ -103,18 +103,18 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   const plate = (y: number, r: number, name: string) => {
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(r - 0.1, r + 0.1, 128),
-      new THREE.MeshBasicMaterial({ color: '#29B6F6', transparent: true, opacity: 0.15, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ color: '#989898', transparent: true, opacity: 0.15, side: THREE.DoubleSide }),
     );
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = y;
     const disc = new THREE.Mesh(
       new THREE.CircleGeometry(r, 96),
-      new THREE.MeshBasicMaterial({ color: '#1565C0', map: fade, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ color: '#555555', map: fade, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
     );
     disc.rotation.x = -Math.PI / 2;
     disc.position.y = y - 0.02;
     group.add(ring, disc);
-    labels.push({ text: name, pos: { x: -r * 0.55, y: y + 0.5, z: r * 0.84 }, color: '#81D4FA', px: 11, priority: 3000 });
+    labels.push({ text: name, pos: { x: -r * 0.55, y: y + 0.5, z: r * 0.84 }, color: '#BDBDBD', px: 11, priority: 3000 });
   };
 
   const tile = (t: SystemTile, color: string, r: number, h: number, opacity = 0.85) => {
@@ -140,7 +140,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   plate(CONSUMER_Y, 30, 'WHO READS IT');
 
   const globeTop = new THREE.Vector3(0, CUBE_Y + r, 0);
-  labels.push({ text: `Ontology · ${graph.nodes.length} entities in YAML`, pos: { x: r + 9, y: CUBE_Y, z: 0 }, color: '#FFD54F', px: 16, priority: 5000 });
+  labels.push({ text: `Ontology · ${graph.nodes.length} entities in YAML`, pos: { x: r + 9, y: CUBE_Y, z: 0 }, color: '#FF9000', px: 16, priority: 5000 });
 
   // Publishing: each blog a box whose VOLUME is its article count, with a
   // square section so all four sides are the same 3:1 face, the shape of a
@@ -149,7 +149,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     const h = 0.9 * Math.cbrt(Math.max(1, s.posts) / 9);
     const w = 3 * h;
     const x = (i === 0 ? -1 : 1) * (w / 2 + 1);
-    const color = i === 0 ? '#26C6DA' : '#7E57C2';
+    const color = i === 0 ? '#FF9000' : '#989898';
     const plain = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55 });
     const face = new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#ffffff', emissiveIntensity: 0.35 });
     // Box faces: +x, -x, +y, -y, +z, -z; the logo on all four sides.
@@ -252,7 +252,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     const at = { x: slots[i].x, y: CONSUMER_Y, z: slots[i].z };
     const mesh = new THREE.Mesh(
       new THREE.IcosahedronGeometry(size, 1),
-      new THREE.MeshStandardMaterial({ color: '#66BB6A', emissive: '#66BB6A', emissiveIntensity: 0.7, flatShading: true, transparent: true, opacity: 0.9 }),
+      new THREE.MeshStandardMaterial({ color: '#4C96F2', emissive: '#4C96F2', emissiveIntensity: 0.7, flatShading: true, transparent: true, opacity: 0.9 }),
     );
     mesh.position.set(at.x, at.y + size, at.z);
     mesh.userData.key = key;
@@ -278,24 +278,24 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     group.add(
       new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(arc.getPoints(40)),
-        new THREE.LineBasicMaterial({ color: '#81C784', transparent: true, opacity: 0.5 }),
+        new THREE.LineBasicMaterial({ color: '#8FBEFF', transparent: true, opacity: 0.5 }),
       ),
     );
   const refCount = referrals.length * 8;
   const refPositions = new Float32Array(refCount * 3);
   const rgeo = new THREE.BufferGeometry();
   rgeo.setAttribute('position', new THREE.BufferAttribute(refPositions, 3));
-  group.add(new THREE.Points(rgeo, new THREE.PointsMaterial({ color: '#C8E6C9', size: 0.55, transparent: true, opacity: 0.95 })));
+  group.add(new THREE.Points(rgeo, new THREE.PointsMaterial({ color: '#CFE2FA', size: 0.55, transparent: true, opacity: 0.95 })));
 
   const beamGeo = new THREE.BufferGeometry().setFromPoints(segments.flatMap(({ a, b }) => [a, b]));
-  group.add(new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: '#4FC3F7', transparent: true, opacity: 0.18 })));
+  group.add(new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.18 })));
 
   // Data particles in the blogs' colours. Per beam, Travelmemo's share of them
   // is interleaved evenly with Reisememo's, so a 30/70 beam reads as such.
   const riders: { seg: number; k0: number }[] = [];
   const colors: number[] = [];
-  const tm = new THREE.Color('#4DD0E1');
-  const rm = new THREE.Color('#B39DDB');
+  const tm = new THREE.Color('#FF9000');
+  const rm = new THREE.Color('#989898');
   segments.forEach((sg, seg) => {
     for (let j = 0; j < sg.n; j++) {
       riders.push({ seg, k0: j / sg.n + (seg % 7) * 0.13 });
@@ -332,16 +332,16 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
 
   /**
    * Borders and coast on the mini globe, in the globe view's colours: the
-   * countries we never write about a faint hairline, ours a muted gold, the
-   * coast grey-blue. Built around the globe's own origin so the horizon cull
+   * countries we never write about a faint hairline, ours a muted brown, the
+   * coast grey. Built around the globe's own origin so the horizon cull
    * (as on the big globe) hides the far side.
    */
   const setCoastlines = (faint: number[], ours: number[], coast: number[]) => {
     const r0 = globeRadius * MINI;
     for (const [src, color, opacity] of [
-      [faint, 0x5f6b73, 0.25],
-      [ours, 0x9c7f35, 0.6],
-      [coast, 0x86a5ad, 0.55],
+      [faint, 0x555555, 0.25],
+      [ours, 0x8a5a14, 0.6],
+      [coast, 0x8a8a88, 0.55],
     ] as const) {
       const pts = new Float32Array(src.length);
       for (let i = 0; i < src.length; i++) pts[i] = src[i] * MINI;

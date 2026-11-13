@@ -64,7 +64,7 @@ export function miniDome(dome: Dome): THREE.Group {
   const mesh = new THREE.Mesh(dome.mesh.geometry, material);
   const wire = new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(DOME_R * 1.002, DETAIL)),
-    new THREE.LineBasicMaterial({ color: '#4FC3F7', transparent: true, opacity: 0.08, depthWrite: false }),
+    new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.08, depthWrite: false }),
   );
   mesh.renderOrder = wire.renderOrder = -1;
   const group = new THREE.Group();
@@ -195,7 +195,7 @@ export function buildDome(graph: Graph, pos: Map<string, Vec3>): Dome {
 
   const wire = new THREE.LineSegments(
     new THREE.WireframeGeometry(new THREE.IcosahedronGeometry(DOME_R * 1.002, DETAIL)),
-    new THREE.LineBasicMaterial({ color: '#4FC3F7', transparent: true, opacity: 0.08, depthWrite: false }),
+    new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.08, depthWrite: false }),
   );
   withDepthFade(wire.material, 0.7, 0.7);
 

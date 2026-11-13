@@ -69,8 +69,8 @@ const GLOW: Record<Perf, number> = { top10: 1.25, top25: 0.75, active: 0.45, see
 const TILE: Record<Perf, number> = { top10: 1.7, top25: 0.95, active: 0.5, seen: 0.28, none: 0.16 };
 // Kept below 1 so photos never feed the bloom pass; brightness still ranks by perf tier.
 const PHOTO: Record<Perf, number> = { top10: 0.8, top25: 0.68, active: 0.56, seen: 0.48, none: 0.42 };
-const SITE_TINT = { travelmemo: new THREE.Color('#26C6DA'), reisememo: new THREE.Color('#B388FF') };
-const GOLD = new THREE.Color('#FFD54F');
+const SITE_TINT = { travelmemo: new THREE.Color('#FF9000'), reisememo: new THREE.Color('#989898') };
+const GOLD = new THREE.Color('#FFF1DC');
 
 interface Box {
   mesh: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>;
@@ -173,14 +173,14 @@ export class GraphScene {
     this.controls.maxDistance = 260;
     this.controls.addEventListener('start', () => (this.controls.autoRotate = false));
 
-    this.scene.background = new THREE.Color('#070b14');
-    this.scene.fog = new THREE.FogExp2('#070b14', 0.003);
+    this.scene.background = new THREE.Color('#101010');
+    this.scene.fog = new THREE.FogExp2('#101010', 0.003);
     this.scene.add(new THREE.AmbientLight('#ffffff', 0.6));
     const sun = new THREE.DirectionalLight('#ffffff', 1.0);
     sun.position.set(40, 80, 30);
     this.scene.add(sun);
 
-    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 0.85, radius: 0.5, threshold: 0.62 });
+    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 1.15, radius: 0.65, threshold: 0.62 });
     this.bloom.updateSize(w, h);
 
     this.tree = placeTree(graph);
@@ -233,12 +233,10 @@ export class GraphScene {
   // ---------- construction ----------
 
   private buildBackdrop() {
-    const tex = new THREE.TextureLoader().load('textures/mj-2.jpg');
-    tex.colorSpace = THREE.SRGBColorSpace;
     this.scene.add(
       new THREE.Mesh(
         new THREE.SphereGeometry(600, 48, 48),
-        new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, color: '#2e3548', fog: false }),
+        new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: '#101010', fog: false }),
       ),
     );
     this.photoSky = new THREE.Mesh(
@@ -254,7 +252,7 @@ export class GraphScene {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(stars, 3));
-    this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#9ecbff', size: 0.7, transparent: true, opacity: 0.7, fog: false })));
+    this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfcfcf', size: 0.7, transparent: true, opacity: 0.5, fog: false })));
   }
 
   private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
@@ -304,7 +302,7 @@ export class GraphScene {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-    this.links.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#4FC3F7', transparent: true, opacity: 0.25 })));
+    this.links.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.25 })));
     withDetailFade((this.links.children[0] as THREE.LineSegments).material as THREE.Material, this.globeDetail, 0.06);
 
     // A trip is drawn as the route itself, stop by stop in itinerary order.
@@ -482,13 +480,13 @@ export class GraphScene {
     const ours: number[] = [];
     for (const f of atlas.features) borderSegments(f.geometry, covered.has(f) ? ours : faint);
     // Continent outlines carry the geography, so they get real line weight
-    // (a muted gold: anything brighter crosses the bloom threshold and glows)
+    // (a muted brown: anything brighter crosses the bloom threshold and glows)
     // (screen-space width); the countries we never write about stay a hairline.
     const { clientWidth: w, clientHeight: h } = this.container;
     this.ghostMats = [];
     for (const [segs, color, opacity, width] of [
-      [faint, 0x5f6b73, 0.25, 1.0],
-      [ours, 0x9c7f35, 0.6, 1.4],
+      [faint, 0x555555, 0.25, 1.0],
+      [ours, 0x8a5a14, 0.6, 1.4],
     ] as const) {
       const mat = new LineMaterial({ color, linewidth: width, transparent: true, opacity, depthWrite: false });
       withDepthFade(mat, 0.7, 0.75);
@@ -502,7 +500,7 @@ export class GraphScene {
     }
     const coast: number[] = [];
     borderSegments(atlas.coast, coast);
-    const coastMat = new LineMaterial({ color: 0x86a5ad, linewidth: 1.5, transparent: true, opacity: 0.55, depthWrite: false });
+    const coastMat = new LineMaterial({ color: 0x8a8a88, linewidth: 1.5, transparent: true, opacity: 0.55, depthWrite: false });
     coastMat.resolution.set(w, h);
     withHorizonCull(coastMat, GHOST_R);
     this.ghostMats.push(coastMat);
@@ -530,7 +528,7 @@ export class GraphScene {
     if (!segs.length) return;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-    this.ghostFocus.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#FFD54F', transparent: true, opacity: 0.95, depthWrite: false })));
+    this.ghostFocus.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#FF9000', transparent: true, opacity: 0.95, depthWrite: false })));
   }
 
   /** The top search hit lights its articles, so it shows where it lives; all hits would flood the globe. */
@@ -701,7 +699,7 @@ export class GraphScene {
       } else if (lit && lit.has(key) && lens) {
         const k = Math.min(1, 0.45 + 0.2 * Math.log2(lift)) * 1.8;
         far = [GOLD.r * k, GOLD.g * k, GOLD.b * k, 1];
-        near = [1.0, 0.88, 0.55, 0.92];
+        near = [1.0, 0.95, 0.86, 0.92];
       } else if (lit && lens && lift >= 1.5) {
         far = near = [0.22, 0.12, 0.02, 0.5];
       } else if (lit && lit.has(key)) {
@@ -711,7 +709,7 @@ export class GraphScene {
         } else {
           // A big selection (Switzerland: ~600 tiles) would bloom into one white disc.
           far = [GOLD.r * boost, GOLD.g * boost, GOLD.b * boost, 1];
-          near = [1.0, 0.88, 0.55, 0.92];
+          near = [1.0, 0.95, 0.86, 0.92];
         }
       } else if (lit) {
         far = near = v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(0.25), 0.3);
@@ -776,7 +774,7 @@ export class GraphScene {
     for (const hot of fp.hotspots.slice(0, 3)) {
       const to = this.views.get(hot.country)?.base;
       if (!to) continue;
-      const mat = new LineMaterial({ color: 0xffd54f, linewidth: 1.5 + 5 * hot.share, transparent: true, opacity: 0.9, depthWrite: false });
+      const mat = new LineMaterial({ color: 0xff9000, linewidth: 1.5 + 5 * hot.share, transparent: true, opacity: 0.9, depthWrite: false });
       mat.resolution.set(w, h);
       this.hotMats.push(mat);
       this.hotLines.add(new LineSegments2(new LineSegmentsGeometry().setPositions([from.x, from.y, from.z, to.x, to.y, to.z]), mat));
@@ -818,7 +816,7 @@ export class GraphScene {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-    this.focusLinks.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#FFD54F', transparent: true, opacity: 0.55 })));
+    this.focusLinks.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#FF9000', transparent: true, opacity: 0.55 })));
   }
 
   // ---------- selection & camera ----------

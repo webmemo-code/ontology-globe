@@ -17,7 +17,7 @@ export async function logoTexture(site: string, color: string, w = 768, h = 256)
   const ctx = c.getContext('2d')!;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(8, 12, 24, 0.35)';
+  ctx.fillStyle = 'rgba(16, 16, 16, 0.35)';
   ctx.fillRect(0, 0, w, h);
   const mw = mark.image.width;
   const mh = mark.image.height;

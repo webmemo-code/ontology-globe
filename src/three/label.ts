@@ -36,7 +36,7 @@ export function makeLabel(
     ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
     ctx.shadowBlur = size * 0.25;
   } else {
-    ctx.fillStyle = 'rgba(8, 12, 24, 0.28)';
+    ctx.fillStyle = 'rgba(16, 16, 16, 0.28)';
     ctx.beginPath();
     ctx.roundRect(0, 0, canvas.width, canvas.height, canvas.height / 2);
     ctx.fill();
