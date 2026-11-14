@@ -1088,8 +1088,8 @@ function rimGlow(radius: number, color: string): THREE.Mesh {
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
-        float rim = pow( 1.0 - max( dot( normalize( vNormal ), normalize( vView ) ), 0.0 ), 2.6 );
-        gl_FragColor = vec4( uColor, rim * 0.6 );
+        float rim = pow( 1.0 - max( dot( normalize( vNormal ), normalize( vView ) ), 0.0 ), 3.6 );
+        gl_FragColor = vec4( uColor, rim * 0.32 );
       }`,
     transparent: true,
     depthWrite: false,
