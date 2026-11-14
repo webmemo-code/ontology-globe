@@ -143,6 +143,11 @@ export class GraphScene {
   private filterTop: string | null = null;
   private hovered: string | null = null;
   private flight: { from: CameraKeyframe; to: CameraKeyframe; t0: number; ms: number; done?: () => void } | null = null;
+  // Home cameras fitted to the HUD's free rectangle; HOMES stays the unfitted reference.
+  private homes: Record<View, CameraKeyframe> = { system: HOMES.system, graph: HOMES.graph };
+  private insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  // True until the user orbits away from home; only then may a reframe move the camera.
+  private atHome = true;
   private frame = 0;
   private clock = new THREE.Clock();
   private downAt = { x: 0, y: 0 };
@@ -168,7 +173,10 @@ export class GraphScene {
     this.controls.autoRotateSpeed = 0.3;
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = 260;
-    this.controls.addEventListener('start', () => (this.controls.autoRotate = false));
+    this.controls.addEventListener('start', () => {
+      this.controls.autoRotate = false;
+      this.atHome = false;
+    });
 
     this.scene.background = new THREE.Color('#101010');
     this.scene.fog = new THREE.FogExp2('#101010', 0.003);
@@ -794,7 +802,7 @@ export class GraphScene {
     this.applyStyle();
     this.refreshFocus();
     if (!fly) return;
-    if (!key) return this.flyTo(HOMES[this.view]);
+    if (!key) return this.flyHome(1600);
     const post = this.postsByKey.get(key);
     if (post && this.view === 'graph') {
       const c = this.articles.at(key);
@@ -879,6 +887,55 @@ export class GraphScene {
     });
   }
 
+  /** Fly to the fitted home of the current view; afterwards a reframe may move the camera again. */
+  private flyHome(ms: number) {
+    void this.flyTo(this.homes[this.view], ms).then(() => {
+      if (!this.selected) this.atHome = true;
+    });
+  }
+
+  /** Pixels of the viewport the HUD covers; the globe is framed in what is left. */
+  setSafeArea(insets: { top: number; right: number; bottom: number; left: number }) {
+    this.insets = { ...insets };
+    this.applyProjection();
+    this.refit();
+  }
+
+  /** Shift the projection centre to the middle of the free rectangle. */
+  private applyProjection() {
+    const { clientWidth: w, clientHeight: h } = this.container;
+    const { top, right, bottom, left } = this.insets;
+    this.camera.aspect = w / h;
+    if (top || right || bottom || left) this.camera.setViewOffset(w, h, (right - left) / 2, (bottom - top) / 2, w, h);
+    else this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
+  }
+
+  /** Fit the globe view's home distance to the free rectangle, keeping its direction. */
+  private refit() {
+    const { clientWidth: w, clientHeight: h } = this.container;
+    const { top, right, bottom, left } = this.insets;
+    const prev = this.homes.graph;
+    let next = HOMES.graph;
+    if (top || right || bottom || left) {
+      const { position: p, target: t } = HOMES.graph;
+      const dir = new THREE.Vector3(p.x - t.x, p.y - t.y, p.z - t.z);
+      const base = dir.length();
+      // One focal length for both axes: the free rectangle spans tan(fov/2) scaled by its share of the canvas.
+      const tanHalf = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) * Math.min(Math.max(h - top - bottom, 1), Math.max(w - left - right, 1)) / h;
+      // Sphere of radius R (globe + bars + glow) fits when distance >= R / sin(half angle).
+      const dist = Math.max(base, ((DOME_R * 1.15) / Math.sin(Math.atan(tanHalf))) * 1.03);
+      dir.setLength(dist);
+      next = kf([t.x + dir.x, t.y + dir.y, t.z + dir.z], [t.x, t.y, t.z]);
+      this.controls.maxDistance = Math.max(260, dist);
+    } else {
+      this.controls.maxDistance = 260;
+    }
+    this.homes = { ...this.homes, graph: next };
+    if (this.flight?.to === prev) this.flight.to = next;
+    if (this.atHome && !this.selected && !this.flight && this.view === 'graph') this.setCamera(next);
+  }
+
   private showViewDecor() {
     const v = this.view;
     this.articles.group.visible = this.links.visible = this.wheel.visible = this.hotLines.visible = this.live.group.visible = v === 'graph';
@@ -893,7 +950,7 @@ export class GraphScene {
     this.showViewDecor();
     this.focusLinks.clear();
     this.applyStyle();
-    this.flyTo(HOMES[view], 2200);
+    this.flyHome(2200);
   }
 
   getCamera(): CameraKeyframe {
@@ -970,8 +1027,8 @@ export class GraphScene {
 
   private onResize = () => {
     const { clientWidth: w, clientHeight: h } = this.container;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.applyProjection();
+    this.refit();
     this.renderer.setSize(w, h);
     this.bloom.updateSize(w, h);
     this.hotMats.forEach((m) => m.resolution.set(w, h));
