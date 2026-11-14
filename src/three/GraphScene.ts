@@ -887,6 +887,11 @@ export class GraphScene {
     });
   }
 
+  /** Back to the current view's home, even with nothing selected (select(null) alone is a no-op then). */
+  resetView() {
+    this.flyHome(1600);
+  }
+
   /** Fly to the fitted home of the current view; afterwards a reframe may move the camera again. */
   private flyHome(ms: number) {
     void this.flyTo(this.homes[this.view], ms).then(() => {

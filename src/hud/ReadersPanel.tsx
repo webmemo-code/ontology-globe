@@ -69,7 +69,7 @@ export function ReadingPanel({ rows, onPick }: { rows: ReadingRow[]; onPick: (ke
             <button onClick={() => r.pick && onPick(r.pick)} title={r.what}>
               <span className="who">{r.who}</span>
               <span className="what">→ {r.what}</span>
-              <span className="tag tag-reader">{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
+              <span className={`tag tag-reader${r.site === 'reisememo' ? ' de' : ''}`}>{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
             </button>
           </li>
         ))}

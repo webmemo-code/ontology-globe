@@ -311,7 +311,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const hoverPost = hover ? posts.get(hover.key) : undefined;
   const hoverInfo = hover ? SYSTEM_INFO[hover.key] : undefined;
 
-  const mobile = useMedia('(max-width: 767px)');
+  const landscape = useMedia('(orientation: landscape) and (max-height: 520px)');
+  const mobile = useMedia('(max-width: 767px)') || landscape;
   const noTour = tourStep === null;
   const showLive = view === 'graph' && live;
   const sheetOpen = noTour && !!(node || post || info);
@@ -341,10 +342,14 @@ function Viewer({ graph }: { graph: Graph }) {
       const strip = rect(stripRef.current);
       app.style.setProperty('--bar-bottom', `${bar?.bottom ?? 68}px`);
       app.style.setProperty('--served-h', `${rect(servedRef.current)?.height ?? 40}px`);
+      app.style.setProperty('--strip-bottom', `${strip?.bottom ?? bar?.bottom ?? 68}px`);
       const tops = [servedRef.current, cardsRef.current, sheet].flatMap((el) => rect(el)?.top ?? []);
       const lc = leftRef.current?.childElementCount ? rect(leftRef.current) : null;
       const rc = rightRef.current?.childElementCount ? rect(rightRef.current) : null;
-      const insets: Insets = {
+      // On its side a phone keeps every panel in the left half: the globe gets the right half.
+      const side = matchMedia('(orientation: landscape) and (max-height: 520px)').matches;
+      const halfEdge = Math.max(0, ...[bar, strip, rect(cardsRef.current), rect(sheet)].flatMap((r) => (r ? [r.right] : [])));
+      const insets: Insets = side ? { top: 8, bottom: 8, left: halfEdge + 8, right: 0 } : {
         top: Math.max(bar?.bottom ?? 0, strip?.bottom ?? 0) + 8,
         bottom: tops.length ? Math.max(0, innerHeight - Math.min(...tops)) : 0,
         left: lc ? lc.right : 0,
@@ -363,7 +368,7 @@ function Viewer({ graph }: { graph: Graph }) {
       ro.disconnect();
       removeEventListener('resize', measure);
     };
-  }, [graph, mobile, showLive, sheetOpen, noTour]);
+  }, [graph, mobile, landscape, showLive, sheetOpen, noTour]);
 
   const searchEl = (
     <div className="search-box">
@@ -518,6 +523,7 @@ function Viewer({ graph }: { graph: Graph }) {
           setTourStep(null);
           setSelected(null);
           setQuery('');
+          sceneRef.current?.resetView();
         }}
         totals={totals}
       />
