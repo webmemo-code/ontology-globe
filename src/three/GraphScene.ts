@@ -209,7 +209,7 @@ export class GraphScene {
     shell.position.y = CUBE_Y;
     this.system.group.add(shell);
     this.system.labels.forEach((l, i) => this.labels.set(`sys-label:${i}`, l.text, l.pos, l.priority, { px: l.px, color: l.color, views: ['system'], always: true }));
-    this.articles.group.add(this.ghost, this.ghostFocus);
+    this.articles.group.add(this.ghost, this.ghostFocus, rimGlow(DOME_R, '#FF9000'));
     this.scene.add(this.articles.group, this.links, this.wheel, this.focusLinks, this.hotLines, this.system.group, this.live.group);
     this.labelScene.add(this.labels.group);
     this.showViewDecor();
@@ -1068,4 +1068,35 @@ export class GraphScene {
 function scaleBox(b: Box, k: number) {
   b.mesh.scale.set(b.size * k, b.height * k, b.size * k);
   b.outline.scale.copy(b.mesh.scale).multiplyScalar(1.04);
+}
+
+/** An orange glow that brightens toward the globe's edge; front faces only, so it vanishes once the camera is inside. */
+function rimGlow(radius: number, color: string): THREE.Mesh {
+  const material = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(color) } },
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4( position, 1.0 );
+        vNormal = normalize( normalMatrix * normal );
+        vView = normalize( -mv.xyz );
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform vec3 uColor;
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        float rim = pow( 1.0 - max( dot( normalize( vNormal ), normalize( vView ) ), 0.0 ), 2.6 );
+        gl_FragColor = vec4( uColor, rim * 0.6 );
+      }`,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 96, 64), material);
+  mesh.renderOrder = -3;
+  return mesh;
 }
