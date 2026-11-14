@@ -5,7 +5,13 @@ import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { loadAtlas, type Atlas } from './data/atlas';
-import { botName, citiesReady, demoLive, fetchLive, tierOf, type BotTier, type LiveBySite, type LiveSnapshot } from './data/live';
+import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
+import { AgentsPanel } from './hud/AgentsPanel';
+import { ReadersPanel, ReadersStrip, ReadingPanel } from './hud/ReadersPanel';
+import { ServedStrip } from './hud/ServedStrip';
+import { TopBar } from './hud/TopBar';
+import { demoHistory, liveStats, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
+import { useMedia } from './hud/useMedia';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
@@ -32,13 +38,7 @@ const VIEWS: { key: View; label: string }[] = [
   { key: 'graph', label: '◍ Globe' },
   { key: 'system', label: '⬡ How it works' },
 ];
-type ReadingRow = {
-  id: string; kind: 'reader' | 'bot'; site: SiteKey; who: string; what: string; pick: string | null;
-  tier?: BotTier; route?: string;
-};
-const TIER_LABELS: Record<BotTier, string> = { training: 'training', search: 'search', user: 'for a user', other: 'other' };
-const ROUTE_LABELS: Record<string, string> = { okf: 'OKF', ontology: 'EntityMap', llms: 'llms.txt', 'llms.txt': 'llms.txt', jsonld: 'JSON-LD' };
-const routeLabel = (route?: string) => (route ? (ROUTE_LABELS[route] ?? route) : '');
+type Insets = { top: number; right: number; bottom: number; left: number };
 
 const SITE_NAME = { travelmemo: 'Travelmemo', reisememo: 'Reisememo' };
 
@@ -103,6 +103,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const liveParam = new URLSearchParams(location.search).get('live');
   const [live, setLive] = useState(liveParam !== null);
   const [liveState, setLiveState] = useState<LiveBySite | null>(null);
+  // Reader count per poll this session, for the sparkline (last 26).
+  const [history, setHistory] = useState<Sample[]>([]);
   useEffect(() => {
     fetch('atlas/articles.json')
       .then((r) => r.json())
@@ -158,6 +160,10 @@ function Viewer({ graph }: { graph: Graph }) {
       }
       if (stop) return;
       setLiveState(data);
+      if (Object.keys(data).length) {
+        const now = sampleOf(data);
+        setHistory((h) => [...(h.length || liveParam !== 'demo' ? h : demoHistory(now)), now].slice(-26));
+      }
       sceneRef.current?.setLive(data);
     };
     load();
@@ -191,25 +197,31 @@ function Viewer({ graph }: { graph: Graph }) {
       });
   }, [query, selected, posts, live]);
 
-  // "Reading now": up to 5 readers, then AI agents newest first, 8 rows in all
-  // (more of one kind when the other has fewer). Each row flies to what is
-  // being read. No counts.
+  // Reader rows (as given) and AI agent rows (newest first); each row flies to what is
+  // being read. Counts are shown on purpose, honestly labelled: a reader row is one
+  // city and article pair, not a person.
   const reading = useMemo(() => {
-    if (!liveState) return [];
-    const rows: ReadingRow[] = [];
+    const readers: ReadingRow[] = [];
+    const bots: ReadingRow[] = [];
+    if (!liveState) return { readers, bots };
+    const seen = new Set<string>();
+    const push = (list: ReadingRow[], row: ReadingRow) => {
+      if (seen.has(row.id)) return;
+      seen.add(row.id);
+      list.push(row);
+    };
     const scoped = Object.entries(liveState).filter(([site]) => mode === 'both' || site === mode) as [SiteKey, LiveSnapshot][];
     for (const [site, snap] of scoped)
       for (const r of snap.readers) {
         const p = r.post ? posts.get(`post:${site}:${r.post}`) : undefined;
-        if (p) rows.push({ id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: r.city ? `${r.city} · ${r.country}` : r.country, what: titleOf(p), pick: postKey(p) });
+        if (p) push(readers, { id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: r.city ? `${r.city} · ${r.country}` : r.country, what: titleOf(p), pick: postKey(p) });
       }
-    const readerRows = rows.splice(0);
-    const bots = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
-    for (const { site, b } of bots) {
+    const fetches = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
+    for (const { site, b } of fetches) {
       const p = b.kind === 'post' && b.post ? posts.get(`post:${site}:${b.post}`) : undefined;
       const n = b.kind === 'entity' && b.entity ? byKey.get(b.entity) : undefined;
       if (!p && !n) continue;
-      rows.push({
+      push(bots, {
         id: `b:${site}:${b.bot}:${b.route}:${b.post ?? b.entity}`,
         kind: 'bot',
         site,
@@ -220,8 +232,7 @@ function Viewer({ graph }: { graph: Graph }) {
         pick: p ? postKey(p) : n!.key,
       });
     }
-    const r = readerRows.slice(0, Math.max(5, 8 - rows.length));
-    return [...r, ...rows.slice(0, 8 - r.length)];
+    return { readers, bots };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveState, mode, posts, byKey, DETAILS]);
 
@@ -300,124 +311,125 @@ function Viewer({ graph }: { graph: Graph }) {
   const hoverPost = hover ? posts.get(hover.key) : undefined;
   const hoverInfo = hover ? SYSTEM_INFO[hover.key] : undefined;
 
-  return (
-    <div className="app">
-      <div ref={host} className="stage" />
+  const mobile = useMedia('(max-width: 767px)');
+  const noTour = tourStep === null;
+  const showLive = view === 'graph' && live;
+  const sheetOpen = noTour && !!(node || post || info);
+  const cardsShown = mobile && noTour && !sheetOpen;
+  const servedShown = showLive && noTour && !mobile;
+  const stats = useMemo(() => liveStats(liveState ?? {}, mode), [liveState, mode]);
+  const series = useMemo(() => history.map((s) => s[mode]), [history, mode]);
+  const split = mode === 'both' && stats.total > 0 ? shareOf(stats.readers.travelmemo, stats.total) : null;
 
-      <div className="left-col">
-      <header className="hud top-left">
-        <h1>
-          <span>Travel</span> Ontology
-        </h1>
-        <p className="sub">The knowledge map behind Travelmemo &amp; Reisememo</p>
-        <div className="stats">
-          <Stat n={totals.entities} label="entities" />
-          <Stat n={totals.posts} label="articles" />
-          <Stat n={totals.hubs} label="hubs" />
-          <Stat n={totals.orphans} label="orphans" />
-        </div>
-        <div className="seg">
-          {VIEWS.map((v) => (
-            <button key={v.key} className={view === v.key ? 'on' : ''} onClick={() => setView(v.key)}>
-              {v.label}
-            </button>
-          ))}
-        </div>
-        {view === 'graph' && (
-          <div className="seg">
-            {MODES.map((m) => (
-              <button key={m.key} className={mode === m.key ? 'on' : ''} onClick={() => setMode(m.key)}>
-                {m.label}
+  // Tell the camera how much of the viewport the HUD covers, and publish the bar/strip sizes to CSS.
+  const appRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const servedRef = useRef<HTMLElement>(null);
+  const stripRef = useRef<HTMLElement>(null);
+  const cardsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const app = appRef.current;
+    if (!app) return;
+    const sheet = app.querySelector<HTMLElement>(':scope > .details');
+    const els = [barRef.current, leftRef.current, rightRef.current, servedRef.current, stripRef.current, cardsRef.current, sheet];
+    const rect = (el: HTMLElement | null) => el?.getBoundingClientRect() ?? null;
+    let last = '';
+    const measure = () => {
+      const bar = rect(barRef.current);
+      const strip = rect(stripRef.current);
+      app.style.setProperty('--bar-bottom', `${bar?.bottom ?? 68}px`);
+      app.style.setProperty('--served-h', `${rect(servedRef.current)?.height ?? 40}px`);
+      const tops = [servedRef.current, cardsRef.current, sheet].flatMap((el) => rect(el)?.top ?? []);
+      const lc = leftRef.current?.childElementCount ? rect(leftRef.current) : null;
+      const rc = rightRef.current?.childElementCount ? rect(rightRef.current) : null;
+      const insets: Insets = {
+        top: Math.max(bar?.bottom ?? 0, strip?.bottom ?? 0) + 8,
+        bottom: tops.length ? Math.max(0, innerHeight - Math.min(...tops)) : 0,
+        left: lc ? lc.right : 0,
+        right: rc ? Math.max(0, innerWidth - rc.left) : 0,
+      };
+      const sig = JSON.stringify(insets);
+      if (sig === last) return;
+      last = sig;
+      (sceneRef.current as (GraphScene & { setSafeArea?: (i: Insets) => void }) | null)?.setSafeArea?.(insets);
+    };
+    const ro = new ResizeObserver(measure);
+    for (const el of els) if (el) ro.observe(el);
+    addEventListener('resize', measure);
+    measure();
+    return () => {
+      ro.disconnect();
+      removeEventListener('resize', measure);
+    };
+  }, [graph, mobile, showLive, sheetOpen, noTour]);
+
+  const searchEl = (
+    <div className="search-box">
+      <input
+        className="search"
+        placeholder="Search: Zermatt, hiking, an article…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && firstHit) pickHit(firstHit);
+          if (e.key === 'Escape') setQuery('');
+        }}
+        aria-label="Search places, topics and articles"
+      />
+      {query.trim() && (
+        <ul className="search-hits" role="listbox">
+          {shownHits.map((n) => (
+            <li key={n.key}>
+              <button onClick={() => pickHit(n.key)}>
+                <span className="dot" style={{ background: CLASS_COLORS[n.class] }} />
+                {labelFor(n, mode)}
+                <small>{CLASS_NAMES[n.class]}</small>
               </button>
-            ))}
-          </div>
-        )}
-        {view === 'graph' && (
-          <div className="row live-row">
-            <button className={live ? 'on' : ''} onClick={() => setLive(!live)} aria-pressed={live}>
-              <span className="live-dot" /> Live
-            </button>
-            {live && <span className="live-status">{liveLabel(liveState)}</span>}
-          </div>
-        )}
-        {live && reading.length > 0 && (
-          <div className="reading-now">
-            <h3>On the blogs now</h3>
-            <ul>
-              {reading.map((r) => (
-                <li key={r.id}>
-                  <button onClick={() => r.pick && pickHit(r.pick)} title={r.what}>
-                    <span className="who">{r.who}</span>
-                    <span className="what">→ {r.what}</span>
-                    {r.kind === 'reader' ? (
-                      <span className="tags tags-reader">
-                        <span className="tag tag-reader">{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
-                      </span>
-                    ) : (
-                      <span className="tags">
-                        <span className="tag tag-bot">{TIER_LABELS[r.tier!]}</span>
-                        {routeLabel(r.route) && <span className="route-pill">{routeLabel(r.route)}</span>}
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <div className="search-box">
-          <input
-            className="search"
-            placeholder="Search: Zermatt, hiking, an article…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && firstHit) pickHit(firstHit);
-              if (e.key === 'Escape') setQuery('');
-            }}
-            aria-label="Search places, topics and articles"
-          />
-          {query.trim() && (
-            <ul className="search-hits" role="listbox">
-              {shownHits.map((n) => (
-                <li key={n.key}>
-                  <button onClick={() => pickHit(n.key)}>
-                    <span className="dot" style={{ background: CLASS_COLORS[n.class] }} />
-                    {labelFor(n, mode)}
-                    <small>{CLASS_NAMES[n.class]}</small>
-                  </button>
-                </li>
-              ))}
-              {shownPosts.map((p) => (
-                <li key={postKey(p)}>
-                  <button onClick={() => pickHit(postKey(p))}>
-                    <span className="dot article" />
-                    {titleOf(p)}
-                    <small>{p.site === 'travelmemo' ? 'Article EN' : 'Article DE'}</small>
-                  </button>
-                </li>
-              ))}
-              {!shownHits.length && !shownPosts.length && <li className="none">No match</li>}
-            </ul>
-          )}
-        </div>
-        <div className="row">
-          <button className="primary" onClick={() => setTourStep(0)}>
-            ▶ Guided tour
-          </button>
-          <button
-            onClick={() => {
-              setTourStep(null);
-              setSelected(null);
-              setQuery('');
-            }}
-          >
-            Reset view
-          </button>
-        </div>
-      </header>
+            </li>
+          ))}
+          {shownPosts.map((p) => (
+            <li key={postKey(p)}>
+              <button onClick={() => pickHit(postKey(p))}>
+                <span className="dot article" />
+                {titleOf(p)}
+                <small>{p.site === 'travelmemo' ? 'Article EN' : 'Article DE'}</small>
+              </button>
+            </li>
+          ))}
+          {!shownHits.length && !shownPosts.length && <li className="none">No match</li>}
+        </ul>
+      )}
+    </div>
+  );
 
-      <details className="hud bottom-left legend" open>
+  const detailsEl = noTour && (
+    <>
+      {node && <Details node={node} graph={graph} mode={mode} byKey={byKey} onPick={setSelected} atlas={atlas} />}
+      {post && <Article post={post} byKey={byKey} onPick={setSelected} photo={photoSrc[selected!]} />}
+      {info && (
+        <aside className="hud details">
+          <small style={{ color: '#FF8F00' }}>System layer</small>
+          <h2>{info.title}</h2>
+          <p className="lead">{info.text}</p>
+          {info.links?.map((l) => (
+            <p key={l.url}>
+              <a className="ext" href={l.url} target="_blank" rel="noreferrer">
+                {l.label} ↗
+              </a>
+            </p>
+          ))}
+        </aside>
+      )}
+    </>
+  );
+
+  const readingPanel = <ReadingPanel rows={reading.readers} onPick={pickHit} />;
+  const agentsPanel = <AgentsPanel rows={reading.bots} count={stats.bots} onPick={pickHit} />;
+
+  const legendEl = (
+      <details className={`hud legend${mobile ? "" : " bottom-left"}`} open>
         <summary>Legend</summary>
         <>
             {/* "How it works" shows no entity boxes, so their colour key would explain nothing there. */}
@@ -482,7 +494,63 @@ function Viewer({ graph }: { graph: Graph }) {
           Image credits
         </button>
       </details>
-      </div>
+  );
+
+  return (
+    <div ref={appRef} className={`app${servedShown ? ' has-served' : ''}`}>
+      <div ref={host} className="stage" />
+
+      <TopBar
+        ref={barRef}
+        mobile={mobile}
+        views={VIEWS}
+        view={view}
+        onView={setView}
+        modes={MODES}
+        mode={mode}
+        onMode={setMode}
+        live={live}
+        onLive={() => setLive(!live)}
+        liveText={liveLabel(liveState)}
+        search={searchEl}
+        onTour={() => setTourStep(0)}
+        onReset={() => {
+          setTourStep(null);
+          setSelected(null);
+          setQuery('');
+        }}
+        totals={totals}
+      />
+
+      {!mobile && (
+        <>
+          <div ref={leftRef} className="left-col">
+            {showLive && <ReadersPanel total={stats.total} split={split} history={series} />}
+            {showLive && readingPanel}
+            {legendEl}
+          </div>
+          <div ref={rightRef} className="right-col">
+            {showLive && agentsPanel}
+            {detailsEl}
+          </div>
+          {servedShown && (
+            <div className="served-wrap">
+              <ServedStrip ref={servedRef} served={stats.served} />
+            </div>
+          )}
+        </>
+      )}
+
+      {mobile && showLive && <ReadersStrip ref={stripRef} total={stats.total} split={split} />}
+      {mobile && detailsEl}
+      {cardsShown && (
+        <div ref={cardsRef} className="hud-cards">
+          {showLive && readingPanel}
+          {showLive && agentsPanel}
+          {showLive && <ServedStrip served={stats.served} list />}
+          {legendEl}
+        </div>
+      )}
 
       {showCredits && (
         <aside className="hud credits">
@@ -517,7 +585,6 @@ function Viewer({ graph }: { graph: Graph }) {
         </aside>
       )}
 
-      {tourStep === null && node && <Details node={node} graph={graph} mode={mode} byKey={byKey} onPick={setSelected} atlas={atlas} />}
       {tourStep === null && view === 'graph' && node && node.class === 'places' && (
         <Lens
           node={node}
@@ -529,21 +596,6 @@ function Viewer({ graph }: { graph: Graph }) {
           closeups={closeups}
           anchor={() => sceneRef.current?.screenPoint(node.key) ?? null}
         />
-      )}
-      {tourStep === null && post && <Article post={post} byKey={byKey} onPick={setSelected} photo={photoSrc[selected!]} />}
-      {tourStep === null && info && (
-        <aside className="hud details">
-          <small style={{ color: '#FF8F00' }}>System layer</small>
-          <h2>{info.title}</h2>
-          <p className="lead">{info.text}</p>
-          {info.links?.map((l) => (
-            <p key={l.url}>
-              <a className="ext" href={l.url} target="_blank" rel="noreferrer">
-                {l.label} ↗
-              </a>
-            </p>
-          ))}
-        </aside>
       )}
 
       {tourStep !== null && (
@@ -598,22 +650,13 @@ function Viewer({ graph }: { graph: Graph }) {
   );
 }
 
-/** Which blogs answered; never how many readers (the public view shows no counts). */
+/** Which blogs answered; the counts live in the panels. */
 function liveLabel(data: LiveBySite | null): string {
   if (!data) return 'connecting…';
   const sites = Object.keys(data);
   if (!sites.length) return 'offline';
   const readers = Object.values(data).some((d) => d?.readers_status === 'ok');
   return `last 30 min · ${sites.length === 2 ? 'both blogs' : sites[0]}${readers ? '' : ' · AI agents only'}`;
-}
-
-function Stat({ n, label }: { n: number; label: string }) {
-  return (
-    <div>
-      <b>{n.toLocaleString('en')}</b>
-      <span>{label}</span>
-    </div>
-  );
 }
 
 function chipFor(n: GraphNode, label: string, onPick: (key: string) => void) {
