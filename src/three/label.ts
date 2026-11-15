@@ -126,7 +126,11 @@ export class Labels {
     hide?: (key: string, pos: Vec3) => boolean,
     fade?: { from: number; far: number } | null,
     prominence = 1,
+    // At most `max` placed labels for which `counts` is true; spent only on labels
+    // that actually show, highest priority first.
+    budget?: { counts: (key: string) => boolean; max: number },
   ) {
+    let spent = 0;
     const k = 2 / (camera.projectionMatrix.elements[5] * h); // sprite scale per pixel, sizeAttenuation off
     const placed: [number, number, number, number][] = [];
     camera.getWorldDirection(this.fwd);
@@ -150,8 +154,11 @@ export class Labels {
       const y = ((1 - this.ndc.y) / 2) * h - hPx - 6;
       const rect: [number, number, number, number] = [x, y, x + wPx, y + hPx];
       const clash = !it.always && placed.some((r) => rect[0] < r[2] && rect[2] > r[0] && rect[1] < r[3] && rect[3] > r[1]);
-      s.visible = !clash;
-      if (clash) continue;
+      const counted = !it.always && !!budget?.counts(key);
+      const over = counted && spent >= budget!.max;
+      s.visible = !clash && !over;
+      if (clash || over) continue;
+      if (counted) spent++;
       placed.push(rect);
       s.scale.set(hPx * s.userData.aspect * k, hPx * k, 1);
       // Lift the pill a few pixels above its anchor.

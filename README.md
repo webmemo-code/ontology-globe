@@ -27,9 +27,11 @@ with Switzerland facing you; fly inside to see the places hanging on their shell
 | Bars on a country | Article count per blog on a log scale: orange Travelmemo, grey Reisememo |
 | Dotted land | True geography (Natural Earth); a selected country is outlined |
 | Boxes inside | Places on shells by level: continents nearest you, sights nearest the skin |
-| Topic wheel | Topics sit on a level wheel inside the globe: direction = family, distance from the centre = how specific. Companies hang over their headquarters, the authors' faces at the zenith |
+| Topic wheel | Topics stand on a level wheel inside the globe. Direction = family. Distance from the centre = articles on both blogs, on one log scale for all families: few near the hub, many towards the rim. The scale is a flat disc of soft bands, one per 1–9 of each decade, each fading in towards its end: like log paper, the bands narrow towards each decade's end, and the disc brightens towards the rim. The decades are labelled 1, 10, 100, 1000 articles. Height = how often AI agents fetched the topic in the last 30 days, stretched over the range of its class. Companies hang over their headquarters, the authors' faces at the zenith |
 | Lens | Select a place to open its lens: the regions, towns and sights inside it with their article counts per blog, and the photos of its articles |
-| Purple tubes | Trips, drawn stop by stop in itinerary order |
+| Spotlight | Inside, entities are grey ghosts; colour follows the centre of the screen: places orange (deep to pale by level), topics violet by family, organizations rose, trips gold, people ivory |
+| Flicker | An entity flickers in full colour while a reader or an AI agent is on it; from outside, an agent's fetch shows as a soft pulse on the skin above it |
+| Gold tubes | Trips, drawn stop by stop in itinerary order |
 | Halo / outline | Top 10% or top 25% search performer / orphan with no article yet |
 | Select | An entity lights its article dots in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |
 

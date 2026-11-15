@@ -300,3 +300,13 @@ a.ext:hover { text-decoration: underline; }
 .lens-more { align-self: center; padding: 0 12px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 @media (max-width: 1099px) { .lens, .lens-lead { display: none; } }
 @media (prefers-reduced-motion: reduce) { .lens-in, .flick { animation: none; } }
+
+/* #27: the main navigation is washed out so it blends into the globe's shine
+   instead of competing with it. Solid orange is left to the globe's focus. */
+.topbar .seg { border-color: rgba(255, 255, 255, 0.08); }
+.topbar .seg button { color: rgba(217, 217, 217, 0.62); }
+.topbar .seg button.on { background: var(--orange-wash); color: var(--orange-ink); font-weight: 700; }
+.topbar .row button { background: rgba(255, 255, 255, 0.035); border-color: rgba(255, 255, 255, 0.08); color: rgba(217, 217, 217, 0.72); }
+.topbar .row button:hover, .topbar .seg button:hover { color: var(--ink); }
+.topbar button.primary, .topbar .row button.primary { background: rgba(255, 144, 0, 0.16); border-color: rgba(255, 144, 0, 0.32); color: var(--orange-ink); }
+.topbar .row button.on { background: rgba(255, 144, 0, 0.12); border-color: rgba(255, 144, 0, 0.28); color: var(--orange-ink); }

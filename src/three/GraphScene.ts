@@ -10,17 +10,17 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
-import { LiveLayer } from './live';
+import { LiveLayer, hash } from './live';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
 import { haloTexture, makeEmblem, makePortrait } from './portrait';
 import { DOME_R, domeDirection, domeLayout, orgsOverHeadquarters, postKey, topicsOverHotspots, type Headquarters } from '../data/globe';
-import { WHEEL_R, topicWheelLayout, wheelPoint } from '../data/topicWheel';
+import { WHEEL_MAX, WHEEL_R, WHEEL_R0, articleRadius, topicWheelLayout, wheelPoint } from '../data/topicWheel';
 import { footprints, liftByCountry, type Footprint } from '../data/footprint';
 import type { Atlas } from '../data/atlas';
-import { CLASS_COLORS, ancestorOfType, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
+import { CLASS_COLORS, GHOST_COLOR, ancestorOfType, entityColor, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats } from '../data/types';
 import type { Geometry } from 'geojson';
 import { geoCentroid, geoContains } from 'd3-geo';
@@ -70,6 +70,41 @@ const DOT_LIGHT: Record<Perf, number> = { top10: 1.25, top25: 1.0, active: 0.8, 
 const DOT_SIZE: Record<Perf, number> = { top10: 1.5, top25: 1.25, active: 1.0, seen: 0.85, none: 0.7 };
 const SITE_TINT = { travelmemo: new THREE.Color('#FF9000'), reisememo: new THREE.Color('#989898') };
 const GOLD = new THREE.Color('#FFF1DC');
+const GHOST = new THREE.Color(GHOST_COLOR);
+const TRIP = new THREE.Color(CLASS_COLORS.trips);
+const FACE_TINT = { person: new THREE.Color('#b8b8b8'), emblem: new THREE.Color('#c8c8c8') };
+
+// Spotlight (#27): colour means focus. Entities are ghosts until the screen centre
+// passes over them; angles from the view axis, full inside IN and gone by OUT.
+const SPOT = { desk: [12, 24], phone: [9, 18] };
+const SPOT_EASE = 0.1; // seconds; ~300 ms to settle
+const LABEL_EVERY = 0.25; // seconds between label re-evaluations
+const LABEL_SPOT = 0.35;
+const GHOST_FILL = 0.1;
+const GHOST_LINE = 0.28;
+const GHOST_FACE = 0.18;
+
+/** Per-key stable pseudo-random in [0, 1) for a step number. */
+function stepRand(step: number, seed: number): number {
+  let h = Math.imul(step ^ Math.floor(seed * 4294967295), 0x9e3779b1);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+/** Live-visit flicker: irregular on/off steps at 6-10 Hz with a soft decay, never a sine. */
+function flicker(t: number, seed: number): number {
+  const x = t * (6 + 4 * seed) + seed * 1000;
+  const step = Math.floor(x);
+  if (stepRand(step, seed) > 0.45) return 1;
+  return stepRand(step - 1, seed) > 0.45 ? (1 - (x - step)) ** 2 : 0;
+}
+
+/** The colour depthFade scales from; written here, so the spotlight and the depth cue share one source. */
+function setBase(m: THREE.Material & { color: THREE.Color }, c: THREE.Color) {
+  ((m.userData.base ??= new THREE.Color()) as THREE.Color).copy(c);
+}
 
 interface Box {
   mesh: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshStandardMaterial>;
@@ -82,6 +117,32 @@ interface Box {
   /** Height: AI fetches of the entity when the snapshot has them, else the diameter. */
   height: number;
   detail: { value: number };
+  /** How far the cylinder is raised so its base sits on the plane (topics on the wheel). */
+  lift: number;
+  /** Face saturation: 0 = grey ghost, 1 = full colour (set by paint). */
+  sat: { value: number };
+  /** What styleBox wants when fully lit; the spotlight blends from the ghost look towards it. */
+  lit: {
+    color: THREE.Color;
+    emissive: number;
+    fill: number;
+    line: number;
+    face: number;
+    faceTint: THREE.Color;
+    ghostFill: number;
+    ghostLine: number;
+    ghostFace: number;
+    haloOn: boolean;
+    haloOp: number;
+  };
+  /** Eased spotlight 0..1, the visit flicker, and the value last painted (-1 = repaint). */
+  spot: number;
+  flick: number;
+  drawn: number;
+  /** 1 = selection, neighbour or search hit (always lit); -1 = dimmed by them; 0 = free. */
+  hold: number;
+  labelled: boolean;
+  labelPriority: number;
 }
 
 interface NodeView extends Box {
@@ -112,8 +173,22 @@ export class GraphScene {
   private postsByKey = new Map<string, GraphPost>();
   /** Whether the snapshot carries AI fetch weights; without them cylinders keep height = width. */
   private hasAi = false;
+  /** AI fetch weight stretched over its class's own range, 0..1 (see applyStyle). */
+  private aiSpan = new Map<string, number>();
   /** Entities an agent fetched in the live feed -> tier colour; their outline lights up. */
   private liveEntities = new Map<string, string>();
+  /** Entities currently visited (bot entity hits, entities of articles read or fetched): they flicker. */
+  private visited = new Set<string>();
+  private lastT = 0;
+  private lastLabels = 0;
+  private narrow = false;
+  private labelOn = new Set<string>();
+  private linkLines!: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  private tubes: { mesh: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>; key: string }[] = [];
+  private fwd = new THREE.Vector3();
+  private tmp = new THREE.Vector3();
+  private tmpColor = new THREE.Color();
+  private tmpColor2 = new THREE.Color();
   private tree: PlaceTree;
   private nodes: Map<string, GraphNode>;
   private atlas: Atlas | null = null;
@@ -160,6 +235,7 @@ export class GraphScene {
     this.graph = graph;
     this.cb = cb;
     const { clientWidth: w, clientHeight: h } = container;
+    this.narrow = w < 768 || h <= 520;
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
@@ -184,8 +260,13 @@ export class GraphScene {
     const sun = new THREE.DirectionalLight('#ffffff', 1.0);
     sun.position.set(40, 80, 30);
     this.scene.add(sun);
+    // A second light below the horizon: seen from slightly above, the cylinder walls
+    // catch its reflection too, not only when looking up from underneath.
+    const under = new THREE.DirectionalLight('#ffffff', 1.3);
+    under.position.set(-40, -14, -28); // ~16 deg below: mirrors a camera ~16 deg above
+    this.scene.add(under);
 
-    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 1.15, radius: 0.65, threshold: 0.62 });
+    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 1.3, radius: 0.65, threshold: 0.62 });
     this.bloom.updateSize(w, h);
 
     this.tree = placeTree(graph);
@@ -259,7 +340,7 @@ export class GraphScene {
   }
 
   private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
-    const color = new THREE.Color(CLASS_COLORS[node.class] ?? '#B0BEC5');
+    const color = GHOST.clone(); // every entity starts as a ghost; applyStyle and the spotlight colour it
     const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color, emissive: color, transparent: true, depthWrite: false, metalness: 0.2, roughness: 0.4 }));
     mesh.userData.key = node.key;
     const outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, transparent: true }));
@@ -269,9 +350,11 @@ export class GraphScene {
     withDetailFade(mesh.material, detail, 0.045);
     withDetailFade(outline.material, detail, 0.08);
     withDetailFade(glow.material, detail, 0.01, 0.15);
-    if (face) withDetailFade(face.material, detail, 0.08);
+    const sat = { value: 0 };
+    if (face) withDetailFade(face.material, detail, 0.08, 0.45, sat);
     this.scene.add(mesh, outline, glow, ...(face ? [face] : []));
-    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, height: 1, detail };
+    const lit = { color: new THREE.Color(), emissive: 0, fill: 0, line: 0, face: 0, faceTint: new THREE.Color(), ghostFill: 0, ghostLine: 0, ghostFace: 0, haloOn: false, haloOp: 0 };
+    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, height: 1, detail, sat, lift: 0, lit, spot: 0, flick: 0, drawn: -1, hold: 0, labelled: false, labelPriority: 0 };
   }
 
   private buildNodes() {
@@ -289,7 +372,7 @@ export class GraphScene {
   }
 
   private place(b: Box) {
-    b.mesh.position.set(b.base.x, b.base.y, b.base.z);
+    b.mesh.position.set(b.base.x, b.base.y + b.lift, b.base.z);
     b.outline.position.copy(b.mesh.position);
     b.halo.position.copy(b.mesh.position);
     b.face?.position.copy(b.mesh.position);
@@ -305,8 +388,10 @@ export class GraphScene {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-    this.links.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.25 })));
-    withDetailFade((this.links.children[0] as THREE.LineSegments).material as THREE.Material, this.globeDetail, 0.06);
+    this.linkLines = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.25 }));
+    this.linkLines.visible = false; // links only with intent: a selection or a filter
+    this.links.add(this.linkLines);
+    withDetailFade(this.linkLines.material, this.globeDetail, 0.06);
 
     // A trip is drawn as the route itself, stop by stop in itinerary order.
     for (const node of this.graph.nodes) {
@@ -315,8 +400,9 @@ export class GraphScene {
       if (pts.length < 2) continue;
       const tube = new THREE.Mesh(
         new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 160, 0.16, 6, false),
-        new THREE.MeshBasicMaterial({ color: '#CE93D8', transparent: true, opacity: 0.7 }),
+        new THREE.MeshBasicMaterial({ color: GHOST_COLOR, transparent: true, opacity: 0.1 }), // lit per frame, with its trip
       );
+      this.tubes.push({ mesh: tube, key: node.key });
       tube.material.depthWrite = false;
       withDetailFade(tube.material, this.globeDetail, 0.06);
       this.links.add(tube);
@@ -343,16 +429,23 @@ export class GraphScene {
     const add = (segs: number[], opacity: number) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-      const mat = new THREE.LineBasicMaterial({ color: '#989898', transparent: true, depthWrite: false, opacity });
+      // Light grey and additive: just bright enough to catch a little bloom.
+      const mat = new THREE.LineBasicMaterial({ color: '#d4d4d4', transparent: true, depthWrite: false, opacity, blending: THREE.AdditiveBlending });
       withDetailFade(mat, this.globeDetail, 0.05);
       this.wheel.add(new THREE.LineSegments(g, mat));
     };
-    add(circle(R), 0.7);
-    add([...circle(5), ...circle((5 + WHEEL_R) / 2)], 0.25);
-    add(sectors.flatMap((s) => radial(s.from - 0.03, 3, R)), 0.45);
+    add(circle(R), 0.9);
+    // The article scale as a flat disc of fading bands instead of rings: each step of
+    // each decade (1-2, 2-3 ... 9-10) fades in towards its end, the decades more
+    // strongly, and the whole disc brightens towards the rim (more articles). The bands
+    // narrow towards every decade's end, like log paper. Decades are labelled.
+    this.wheel.add(articleDisc(WHEEL_R0, articleRadius(WHEEL_MAX), WHEEL_MAX, this.globeDetail));
+    for (let d = 1; d <= WHEEL_MAX; d *= 10)
+      this.labels.set(`wheel-scale:${d}`, d === WHEEL_MAX ? `${d} articles` : `${d}`, { ...wheelPoint(0, articleRadius(d)), y: 0.3 }, 2400, { px: 10, color: '#9D9C9A', views: ['graph'] });
+    add(sectors.flatMap((s) => radial(s.from - 0.03, WHEEL_R0, R)), 0.55);
     const ticks: number[] = [];
     for (let i = 0; i < 96; i++) ticks.push(...radial((2 * Math.PI * i) / 96, R, R + (i % 4 === 0 ? 1.1 : 0.5)));
-    add(ticks, 0.6);
+    add(ticks, 0.75);
     for (const s of sectors) {
       this.labels.set(`wheel:${s.name}`, s.name.toUpperCase(), { ...wheelPoint(s.mid, WHEEL_R + 4), y: 0.6 }, 2500, { px: 12, color: '#BDBDBD', views: ['graph'] });
     }
@@ -405,6 +498,18 @@ export class GraphScene {
       },
     });
     this.liveEntities = new Map(this.live.entityHits);
+    for (const k of this.visited) {
+      const v = this.views.get(k);
+      if (v) v.flick = 0;
+    }
+    this.visited = new Set(this.liveEntities.keys());
+    const addPost = (site: string, id: number | null | undefined) => {
+      for (const e of (id ? this.postsByKey.get(`post:${site}:${id}`)?.entities : undefined) ?? []) this.visited.add(e);
+    };
+    for (const [site, snap] of Object.entries(data ?? {})) {
+      for (const r of snap?.readers ?? []) addPost(site, r.post);
+      for (const b of snap?.bots ?? []) if (b.kind === 'post') addPost(site, b.post);
+    }
     if (this.views.size) this.applyStyle();
   }
 
@@ -444,8 +549,9 @@ export class GraphScene {
         const c = credits[v.key];
         if (!c || v.face) continue;
         const kind = c.kind ?? (v.node.type === 'Country' ? 'flag' : 'logo');
-        v.face = makeEmblem(c.image, kind, CLASS_COLORS[v.node.class] ?? '#ffffff');
-        withDetailFade(v.face.material, v.detail, v.node.type === 'Country' ? 0.09 : 0.035);
+        v.face = makeEmblem(c.image, kind, entityColor(v.node));
+        withDetailFade(v.face.material, v.detail, v.node.type === 'Country' ? 0.09 : 0.035, 0.45, v.sat);
+        v.drawn = -1; // a new emblem was never painted: force its ghost look on the next frame
         v.face.position.copy(v.mesh.position);
         this.scene.add(v.face);
       }
@@ -572,37 +678,61 @@ export class GraphScene {
   private styleBox(b: Box, node: GraphNode, s: SiteStats | null, dim: boolean, maxSize: number) {
     const present = !!s;
     const orphan = !s || s.status === 'orphan';
-    b.size = present ? Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize) : 0.5;
+    // Topics crowd the small wheel in the middle: a slimmer scale so they barely overlap.
+    const topic = node.class === 'topics' && this.view === 'graph';
+    b.size = !present ? 0.5 : topic ? Math.min(0.5 + 0.17 * Math.sqrt(s!.posts), 2) : Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize);
     // Height is the AI fetch weight alone (log scale 0..1, never a count), on
     // its own scale (0.4..5 units), so a big
     // topic is not tall just for being big; no fetches = a flat disc.
     const ai = s?.ai ?? 0;
-    b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.4 + 4.6 * ai : 0.2;
+    // The weights bunch (all topics sit between 0.63 and 1), so a 0..1 map read as one
+    // height: stretch the class's own range over the full height, linearly, so similar
+    // weights keep similar heights and the most fetched stand tallest.
+    const k = this.aiSpan.get(node.key) ?? 0;
+    b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.3 + 6.2 * k : 0.2;
+    // On the wheel, cylinders stand on the grid like bars instead of floating around it.
+    b.lift = topic ? b.height / 2 : 0;
+    this.place(b);
     scaleBox(b, 1);
-    const m = b.mesh.material;
+    const L = b.lit;
+    L.color.set(entityColor(node));
     // Authors sit on every article, so their tier says little; keep them from outshining the map.
-    m.emissiveIntensity = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : node.class === 'topics' ? 0.22 : 1); // topics sit close together on the wheel: full glow blooms into one blob
+    L.emissive = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : node.class === 'topics' ? 0.22 : 1); // topics sit close together on the wheel: full glow blooms into one blob
     // Orphans are outlines only: in the ontology, no article yet.
-    m.opacity = b.face || orphan ? 0 : dim ? 0.07 : 0.85;
-    const lo = b.outline.material;
-    lo.color.set(orphan ? '#78909C' : CLASS_COLORS[node.class] ?? '#B0BEC5');
-    lo.userData.base = lo.color.clone(); // depthFade scales from here
-    lo.opacity = b.face ? 0 : !present ? 0.1 : dim ? 0.08 : orphan ? 0.45 : 0.9;
+    L.fill = b.face || orphan ? 0 : dim ? 0.07 : 0.85;
+    L.line = b.face ? 0 : !present ? 0.1 : dim ? 0.08 : orphan ? 0.45 : 0.9;
+    // Ghosts: the same shapes, nearly gone; orphans fainter still.
+    L.ghostFill = Math.min(L.fill, GHOST_FILL);
+    L.ghostLine = Math.min(L.line, orphan ? 0.12 : GHOST_LINE);
     const tier = present && !orphan && !dim && !b.face ? s!.perf : 'none';
-    b.halo.visible = (tier === 'top10' || tier === 'top25') && this.view !== 'system' && node.class !== 'topics';
+    L.haloOn = (tier === 'top10' || tier === 'top25') && this.view !== 'system' && node.class !== 'topics';
+    L.haloOp = tier === 'top10' ? 0.6 : 0.3;
     b.halo.scale.setScalar(b.size * (tier === 'top10' ? 3.4 : 2.4));
-    b.halo.material.opacity = tier === 'top10' ? 0.6 : 0.3;
     if (b.face) {
       const person = node.class === 'people';
       const f = this.view === 'system' ? 1.3 : person ? 6.5 : Math.max(2.2, b.size * (node.type === 'Country' ? 1.05 : node.class === 'places' ? 1.25 : 1.5));
       b.face.scale.set(f * (b.face.userData.aspect ?? 1), f, 1);
       // Emblems stay a little see-through; an orphan's flag or logo fades like its outline would.
-      b.face.material.opacity = dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;
+      L.face = dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;
+      L.faceTint.copy(person ? FACE_TINT.person : FACE_TINT.emblem);
+      L.ghostFace = Math.min(L.face, GHOST_FACE);
     }
     return present;
   }
 
   private applyStyle() {
+    // AI fetch weight -> 0..1 between the lowest and highest weight in each class.
+    this.aiSpan.clear();
+    const byClass = new Map<string, { key: string; ai: number }[]>();
+    for (const n of this.graph.nodes) {
+      const ai = statsFor(n, this.mode)?.ai ?? 0;
+      if (ai > 0) (byClass.get(n.class) ?? byClass.set(n.class, []).get(n.class)!).push({ key: n.key, ai });
+    }
+    for (const list of byClass.values()) {
+      const lo = Math.min(...list.map((e) => e.ai));
+      const hi = Math.max(...list.map((e) => e.ai));
+      for (const e of list) this.aiSpan.set(e.key, hi > lo ? (e.ai - lo) / (hi - lo) : 1);
+    }
     const hl = this.highlight();
     const maxSize = this.view === 'system' ? 1.1 : 3.6;
     const ranked = [...this.graph.nodes].sort((a, b) => (statsFor(b, this.mode)?.posts ?? 0) - (statsFor(a, this.mode)?.posts ?? 0));
@@ -637,12 +767,11 @@ export class GraphScene {
       const fetched = this.view === 'graph' ? this.liveEntities.get(node.key) : undefined;
       v.mesh.visible = !v.face && !noBox;
       v.outline.visible = (!v.face || !!fetched) && !noBox;
-      if (fetched) {
-        v.outline.material.color.set(fetched);
-        v.outline.material.userData.base = v.outline.material.color.clone();
-        v.outline.material.opacity = 1;
-      }
       if (v.face) v.face.visible = !noBox;
+      // Selection, neighbours and search hits stay lit wherever they are; what they dim is a ghost.
+      v.hold = hl?.entities.has(node.key) || this.filter?.has(node.key) ? 1 : dim ? -1 : 0;
+      if (this.view !== 'graph') v.spot = 1; // How it works keeps its full look
+      this.paint(v, Math.max(v.spot, v.flick));
       if (noBox) v.halo.visible = false;
 
       // Labels: every entity is a candidate; priority decides who survives the overlap cull.
@@ -658,12 +787,14 @@ export class GraphScene {
       // The selection, its neighbours and search hits always read, whatever their tier.
       const tier = hl?.entities.has(node.key) || this.filter?.has(node.key) ? 0 : tierOf(node);
       this.labels.set(node.key, showMain ? text : null, this.anchor(v), priority, { px: node.key === this.selected ? 18 : 14, tier });
+      v.labelled = !!showMain && !!text;
+      v.labelPriority = priority;
     }
+    this.refreshLabels();
 
-    this.links.children.forEach((c) => {
-      const mat = (c as THREE.Mesh).material as THREE.Material & { opacity: number };
-      mat.opacity = hl || this.filter ? 0.07 : c instanceof THREE.LineSegments ? 0.25 : 0.7;
-    });
+    // The grey entity links appear only with intent; trip tubes colour with their trip (spotlight()).
+    this.linkLines.visible = !!(hl || this.filter);
+    this.linkLines.material.opacity = 0.07;
     // Articles filed inside the selection's own country patch light fully;
     // ones that merely mention it but were filed elsewhere stay dim amber.
     const home = this.selected && this.views.has(this.selected) ? ancestorOfType(this.tree, this.nodes, this.selected, 'Country') : null;
@@ -698,6 +829,98 @@ export class GraphScene {
       return { rgba: v4(tmp.copy(SITE_TINT[post.site]).multiplyScalar(DOT_LIGHT[post.perf]), 0.95), size: DOT_SIZE[post.perf] };
     });
   }
+
+  /**
+   * Blend one entity between its ghost look and its lit look (`lit`, from styleBox).
+   * Colours go into userData.base/emissive, which depthFade scales each frame.
+   */
+  private paint(v: NodeView, s: number) {
+    const L = v.lit;
+    v.drawn = s;
+    const c = this.tmpColor.copy(GHOST).lerp(L.color, s);
+    const m = v.mesh.material;
+    setBase(m, c);
+    ((m.userData.emissive ??= new THREE.Color()) as THREE.Color).copy(c);
+    m.emissiveIntensity = L.emissive * s;
+    m.opacity = THREE.MathUtils.lerp(L.ghostFill, L.fill, s);
+    const o = v.outline.material;
+    const fetched = this.view === 'graph' ? this.liveEntities.get(v.key) : undefined;
+    if (fetched) {
+      // An agent's visit keeps the outline in its tier colour (breathing, see loop).
+      setBase(o, this.tmpColor2.set(fetched));
+      o.opacity = 1;
+    } else {
+      setBase(o, c);
+      o.opacity = THREE.MathUtils.lerp(L.ghostLine, L.line, s);
+    }
+    v.halo.visible = L.haloOn && s > 0.5;
+    setBase(v.halo.material, c);
+    v.halo.material.opacity = L.haloOp * s;
+    if (v.face) {
+      setBase(v.face.material, this.tmpColor2.copy(GHOST).lerp(L.faceTint, s));
+      v.face.material.opacity = THREE.MathUtils.lerp(L.ghostFace, L.face, s);
+      v.sat.value = s; // flags and logos turn grey as ghosts, not just dimmer
+    }
+  }
+
+  /** Globe view, per frame: ease every entity's spotlight towards the view axis, flicker visits, repaint what moved. */
+  private spotlight(t: number) {
+    const dt = Math.min(0.1, Math.max(0, t - this.lastT));
+    this.lastT = t;
+    if (this.view !== 'graph') return;
+    const inside = this.camera.position.length() < DOME_R;
+    const [inA, outA] = this.narrow ? SPOT.phone : SPOT.desk;
+    const cosIn = Math.cos(THREE.MathUtils.degToRad(inA));
+    const cosOut = Math.cos(THREE.MathUtils.degToRad(outA));
+    const k = 1 - Math.exp(-dt / SPOT_EASE);
+    this.camera.getWorldDirection(this.fwd);
+    const eye = this.camera.position;
+    for (const v of this.views.values()) {
+      let target = 0;
+      if (v.hold) target = v.hold > 0 ? 1 : 0;
+      else if (inside) {
+        // Aim at the rendered centre: a topic stands lift units above its wheel point.
+        const d = this.tmp.set(v.base.x - eye.x, v.base.y + v.lift - eye.y, v.base.z - eye.z);
+        const len = d.length();
+        target = len < 1e-3 ? 1 : THREE.MathUtils.smoothstep(d.dot(this.fwd) / len, cosOut, cosIn);
+      }
+      v.spot += (target - v.spot) * k;
+      if (Math.abs(target - v.spot) < 0.004) v.spot = target;
+    }
+    // Visits flash at full colour whatever the spotlight says, inside the globe only.
+    const flick = this.live.group.visible && inside;
+    for (const key of this.visited) {
+      const v = this.views.get(key);
+      if (v) v.flick = flick ? flicker(t, hash(key)) : 0;
+    }
+    for (const v of this.views.values()) {
+      const s = Math.max(v.spot, v.flick);
+      if (Math.abs(s - v.drawn) > 0.01 || (s !== v.drawn && (s === 0 || s === 1))) this.paint(v, s);
+    }
+    // A trip's route takes its colour with the trip.
+    for (const { mesh, key } of this.tubes) {
+      const s = this.views.get(key)?.spot ?? 0;
+      mesh.material.color.copy(GHOST).lerp(TRIP, s);
+      mesh.material.opacity = THREE.MathUtils.lerp(0.1, 0.6, s);
+    }
+  }
+
+  /**
+   * Whisper: only lit entities (or the selection, its neighbours, search hits) may
+   * carry a label. The 8 / 5 budget is spent in Labels.update, on labels that pass its
+   * distance, viewport and overlap checks, so a rejected label never takes a slot.
+   */
+  private refreshLabels() {
+    this.labelOn.clear();
+    if (this.view !== 'graph') return;
+    for (const v of this.views.values()) if (v.labelled && (v.hold > 0 || v.spot > LABEL_SPOT)) this.labelOn.add(v.key);
+  }
+
+  /** Labels.update budget: spotlight labels count towards the cap; overrides (hold) and non-entity labels never do. */
+  private budgeted = (key: string) => this.view === 'graph' && (this.views.get(key)?.hold ?? 1) <= 0;
+
+  /** Labels.update hook: in the globe view an entity label shows only while it is in labelOn. */
+  private hideLabel = (key: string) => this.view === 'graph' && this.views.has(key) && !this.labelOn.has(key);
 
   /** Globe view: entities behind the photo band dim like the dome tiles, so the near side reads first. */
   private depthFade(range: { from: number; far: number } | null) {
@@ -734,7 +957,7 @@ export class GraphScene {
   }
 
   private anchor(b: Box): Vec3 {
-    const lift = b.face ? b.face.scale.y / 2 : b.size / 2;
+    const lift = b.face ? b.face.scale.y / 2 : b.lift ? 2 * b.lift + 0.4 : b.size / 2;
     return { x: b.base.x, y: b.base.y + lift, z: b.base.z };
   }
 
@@ -1032,6 +1255,7 @@ export class GraphScene {
 
   private onResize = () => {
     const { clientWidth: w, clientHeight: h } = this.container;
+    this.narrow = w < 768 || h <= 520;
     this.applyProjection();
     this.refit();
     this.renderer.setSize(w, h);
@@ -1080,8 +1304,13 @@ export class GraphScene {
     }
     if (this.morph) this.stepMorph();
     if (this.system.group.visible) this.system.animate(t);
-    if (this.live.group.visible) this.live.tick(t);
+    if (this.live.group.visible) this.live.tick(t, this.camera.position);
     const fade = this.articles.group.visible ? this.articles.update(this.camera) : null;
+    this.spotlight(t);
+    if (t - this.lastLabels > LABEL_EVERY) {
+      this.lastLabels = t;
+      this.refreshLabels();
+    }
     this.depthFade(fade);
     const sky = this.photoSky.material;
     sky.opacity += (this.photoSkyTarget - sky.opacity) * 0.04;
@@ -1104,7 +1333,7 @@ export class GraphScene {
     // Hide the entire label layer outside, including selections and live labels.
     const outside = this.view === 'graph' && this.camera.position.length() > DOME_R;
     this.labels.group.visible = !outside;
-    if (!outside) this.labels.update(this.camera, w, h, this.view, undefined, fade, this.view === 'graph' ? THREE.MathUtils.lerp(0.62, 1, this.globeDetail.value) : 1);
+    if (!outside) this.labels.update(this.camera, w, h, this.view, this.hideLabel, fade, this.view === 'graph' ? THREE.MathUtils.lerp(0.62, 1, this.globeDetail.value) : 1, { counts: this.budgeted, max: this.narrow ? 5 : 8 });
     this.bloom.composer.render();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
@@ -1130,6 +1359,40 @@ export class GraphScene {
 function scaleBox(b: Box, k: number) {
   b.mesh.scale.set(b.size * k, b.height * k, b.size * k);
   b.outline.scale.copy(b.mesh.scale).multiplyScalar(1.04);
+}
+
+/** The topic wheel's article scale: a flat disc whose bands fade in along a log10 scale (#27). */
+function articleDisc(r0: number, r1: number, max: number, detail: { value: number }): THREE.Mesh {
+  const geo = new THREE.RingGeometry(r0, r1, 160, 1);
+  geo.rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    uniforms: { uR0: { value: r0 }, uR1: { value: r1 }, uLogMax: { value: Math.log10(1 + max) }, uDetail: detail, uColor: { value: new THREE.Color('#d4d4d4') } },
+    vertexShader: `
+      varying vec2 vXZ;
+      void main() {
+        vXZ = position.xz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }`,
+    fragmentShader: `
+      uniform float uR0; uniform float uR1; uniform float uLogMax; uniform float uDetail; uniform vec3 uColor;
+      varying vec2 vXZ;
+      void main() {
+        float t = clamp( ( length( vXZ ) - uR0 ) / ( uR1 - uR0 ), 0.0, 1.0 );
+        float v = max( pow( 10.0, t * uLogMax ) - 1.0, 1.0 );
+        float lg = log( v ) / log( 10.0 );
+        float decade = fract( lg );                      // 0 at 1, 10, 100 ... rising to the next
+        float step = fract( v / pow( 10.0, floor( lg ) ) ); // 0 at each 1, 2, 3 ... of the decade
+        float a = ( 0.008 + 0.026 * t ) * ( 0.25 + 0.45 * decade + 0.3 * step );
+        gl_FragColor = vec4( uColor, a * mix( 0.15, 1.0, uDetail ) );
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const disc = new THREE.Mesh(geo, material);
+  disc.position.y = -0.02; // just under the grid lines and the cylinder bases
+  disc.renderOrder = -1;
+  return disc;
 }
 
 /** An orange glow that brightens toward the globe's edge; front faces only, so it vanishes once the camera is inside. */

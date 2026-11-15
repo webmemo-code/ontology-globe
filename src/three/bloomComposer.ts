@@ -54,7 +54,7 @@ export const DEFAULT_BLOOM_CONFIG: BloomConfig = {
 
 export const MOBILE_BLOOM_CONFIG: BloomConfig = {
   enabled: true, // Slightly stronger bloom than desktop for small screens
-  strength: 1.3,
+  strength: 1.45,
   radius: 0.8,     // A little wider spread for visibility
   threshold: 0.55  // Only bright pixels bloom (0.1 washed the whole scene out)
 };
