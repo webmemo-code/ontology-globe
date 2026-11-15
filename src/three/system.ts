@@ -336,7 +336,8 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   const tumblers: THREE.Mesh[] = [];
   // Little boxes of content travelling down each retrieval beam, the counterpart
   // of the motes rising below: more of them for a heavier reader's beam.
-  const parcels: { a: THREE.Vector3; b: THREE.Vector3; phase: number; rate: number; color: THREE.Color; size: number }[] = [];
+  // `curve` (optional) replaces the straight a -> b path, walked from 0 to 1.
+  const parcels: { a: THREE.Vector3; b: THREE.Vector3; curve?: THREE.Curve<THREE.Vector3>; phase: number; rate: number; color: THREE.Color; size: number }[] = [];
   const beamShifts: { value: number }[] = [];
   const READER_DOT = new THREE.Color('#FF9000').multiplyScalar(0.78); // dimmed like the live dots: crisp, no bloom
   // Readers sit on a circle above the outputs. Every order of readers around
@@ -476,6 +477,13 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   group.add(moteLayer);
 
   // One instanced mesh for all parcels; each fades by scale so none pops.
+  // Travelers' questions go out to the engines and AI readers: orange boxes
+  // along each referral arc, from the travelers to that reader (the arc is
+  // drawn reader -> travelers, so it is walked backwards).
+  referrals.forEach((arc, r) => {
+    const back = { getPoint: (k: number, out = new THREE.Vector3()) => arc.getPoint(1 - k, out) } as THREE.Curve<THREE.Vector3>;
+    for (let j = 0; j < 3; j++) parcels.push({ a: arc.v2, b: arc.v0, curve: back, phase: (j + 0.4 * r) / 3 % 1, rate: 0.08, color: new THREE.Color(READER_DOT), size: 0.4 });
+  });
   const parcelMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthWrite: false }), Math.max(1, parcels.length));
   parcels.forEach((pc, i) => parcelMesh.setColorAt(i, pc.color));
   parcelMesh.count = parcels.length;
@@ -506,7 +514,8 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     mgeo.attributes.color.needsUpdate = true;
     parcels.forEach((pc, i) => {
       const k = (time * pc.rate + pc.phase) % 1;
-      tmp.lerpVectors(pc.a, pc.b, k);
+      if (pc.curve) pc.curve.getPoint(k, tmp);
+      else tmp.lerpVectors(pc.a, pc.b, k);
       pq.setFromEuler(pe.set(time * 1.3 + i, time * 0.9 + i * 2, 0));
       ps.setScalar(pc.size * Math.sin(Math.PI * k));
       parcelMesh.setMatrixAt(i, pm.compose(tmp, pq, ps));
