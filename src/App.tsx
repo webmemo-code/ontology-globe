@@ -14,7 +14,7 @@ import { demoHistory, liveStats, sampleOf, shareOf, type ReadingRow, type Sample
 import { useMedia } from './hud/useMedia';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
-import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from './data/types';
+import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode, SystemNumbers } from './data/types';
 
 const PERF_TEXT: Record<Perf, string> = {
   top10: 'Top 10% in search',
@@ -418,6 +418,7 @@ function Viewer({ graph }: { graph: Graph }) {
           <small style={{ color: '#FF8F00' }}>System layer</small>
           <h2>{info.title}</h2>
           <p className="lead">{info.text}</p>
+          {selected === 'sys:google' && <p>Counted: {searchSplit(graph.system)}</p>}
           {info.links?.map((l) => (
             <p key={l.url}>
               <a className="ext" href={l.url} target="_blank" rel="noreferrer">
@@ -823,4 +824,16 @@ function Details({
       </section>
     </aside>
   );
+}
+
+const ENGINE_NAMES: Record<string, string> = { google: 'Google', bing: 'Bing' };
+
+/** "Google 86% · Bing 14%" from system.json's search_split; older files measured Google only. */
+function searchSplit(system: SystemNumbers | null | undefined): string {
+  const split = system?.search_split;
+  if (!split || !Object.keys(split).length) return 'Google only';
+  return Object.entries(split)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k, v]) => `${ENGINE_NAMES[k] ?? k} ${Math.round(v * 100)}%`)
+    .join(' · ');
 }

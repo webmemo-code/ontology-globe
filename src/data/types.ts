@@ -78,4 +78,6 @@ export interface SystemNumbers {
   share_site?: string;
   /** Per output, how often AI crawlers fetched it, as a log weight 0..1. JSON-LD has none. */
   retrievals?: Record<string, number>;
+  /** Each search engine's share of all measured search clicks, 0..1 (#35). Absent in older files: Google only. */
+  search_split?: Record<string, number>;
 }
