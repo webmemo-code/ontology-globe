@@ -436,17 +436,13 @@ export class GraphScene {
       this.wheel.add(new THREE.LineSegments(g, mat));
     };
     add(circle(R), 0.9);
-    // The article scale as log paper: a ring per 1-9 of each decade, so rings crowd
-    // towards every decade's end; rings grow brighter towards the rim (more articles).
-    // Decade rings (1, 10, 100, 1000) are stronger and labelled.
-    const span = articleRadius(WHEEL_MAX) - WHEEL_R0;
+    // The article scale as a flat disc of fading bands instead of rings: each step of
+    // each decade (1-2, 2-3 ... 9-10) fades in towards its end, the decades more
+    // strongly, and the whole disc brightens towards the rim (more articles). The bands
+    // narrow towards every decade's end, like log paper. Decades are labelled.
+    this.wheel.add(articleDisc(WHEEL_R0, articleRadius(WHEEL_MAX), WHEEL_MAX, this.globeDetail));
     for (let d = 1; d <= WHEEL_MAX; d *= 10)
-      for (let m = 1; m <= 9 && m * d <= WHEEL_MAX; m++) {
-        const r = articleRadius(m * d);
-        const t = (r - WHEEL_R0) / span;
-        add(circle(r), m === 1 ? 0.25 + 0.4 * t : 0.06 + 0.16 * t);
-        if (m === 1) this.labels.set(`wheel-scale:${d}`, d === WHEEL_MAX ? `${d} articles` : `${d}`, { ...wheelPoint(0, r), y: 0.3 }, 2400, { px: 10, color: '#9D9C9A', views: ['graph'] });
-      }
+      this.labels.set(`wheel-scale:${d}`, d === WHEEL_MAX ? `${d} articles` : `${d}`, { ...wheelPoint(0, articleRadius(d)), y: 0.3 }, 2400, { px: 10, color: '#9D9C9A', views: ['graph'] });
     add(sectors.flatMap((s) => radial(s.from - 0.03, WHEEL_R0, R)), 0.55);
     const ticks: number[] = [];
     for (let i = 0; i < 96; i++) ticks.push(...radial((2 * Math.PI * i) / 96, R, R + (i % 4 === 0 ? 1.1 : 0.5)));
@@ -1366,6 +1362,40 @@ export class GraphScene {
 function scaleBox(b: Box, k: number) {
   b.mesh.scale.set(b.size * k, b.height * k, b.size * k);
   b.outline.scale.copy(b.mesh.scale).multiplyScalar(1.04);
+}
+
+/** The topic wheel's article scale: a flat disc whose bands fade in along a log10 scale (#27). */
+function articleDisc(r0: number, r1: number, max: number, detail: { value: number }): THREE.Mesh {
+  const geo = new THREE.RingGeometry(r0, r1, 160, 1);
+  geo.rotateX(-Math.PI / 2);
+  const material = new THREE.ShaderMaterial({
+    uniforms: { uR0: { value: r0 }, uR1: { value: r1 }, uLogMax: { value: Math.log10(1 + max) }, uDetail: detail, uColor: { value: new THREE.Color('#d4d4d4') } },
+    vertexShader: `
+      varying vec2 vXZ;
+      void main() {
+        vXZ = position.xz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+      }`,
+    fragmentShader: `
+      uniform float uR0; uniform float uR1; uniform float uLogMax; uniform float uDetail; uniform vec3 uColor;
+      varying vec2 vXZ;
+      void main() {
+        float t = clamp( ( length( vXZ ) - uR0 ) / ( uR1 - uR0 ), 0.0, 1.0 );
+        float v = max( pow( 10.0, t * uLogMax ) - 1.0, 1.0 );
+        float lg = log( v ) / log( 10.0 );
+        float decade = fract( lg );                      // 0 at 1, 10, 100 ... rising to the next
+        float step = fract( v / pow( 10.0, floor( lg ) ) ); // 0 at each 1, 2, 3 ... of the decade
+        float a = ( 0.03 + 0.09 * t ) * ( 0.25 + 0.45 * decade + 0.3 * step );
+        gl_FragColor = vec4( uColor, a * mix( 0.15, 1.0, uDetail ) );
+      }`,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const disc = new THREE.Mesh(geo, material);
+  disc.position.y = -0.02; // just under the grid lines and the cylinder bases
+  disc.renderOrder = -1;
+  return disc;
 }
 
 /** An orange glow that brightens toward the globe's edge; front faces only, so it vanishes once the camera is inside. */
