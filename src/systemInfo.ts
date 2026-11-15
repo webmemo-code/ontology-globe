@@ -47,8 +47,8 @@ export const SYSTEM_INFO: Record<string, SystemInfo> = {
     links: both('/okf/'),
   },
   'sys:google': {
-    title: 'Google Search',
-    text: 'Reads the JSON-LD for rich results and entity understanding. The Wikidata links let Google tie our articles to its own Knowledge Graph.',
+    title: 'Search engines',
+    text: 'Google, Bing and others read the JSON-LD for rich results and entity understanding. The Wikidata links let them tie our articles to their own knowledge graphs. Its size counts Google search clicks, the one engine we measure.',
   },
   'sys:ai-training': {
     title: 'AI training',
@@ -64,7 +64,7 @@ export const SYSTEM_INFO: Record<string, SystemInfo> = {
   },
   'sys:travelers': {
     title: 'Travelers',
-    text: 'People planning a trip. The same structure powers what they see: destination pages, related articles, and links between the English and German versions of a story. Sphere sizes compare monthly volume on a log scale: travelers (GA4 users), Google (search clicks) and AI fetches. AI fetches are counted before the cache, every article page included.',
+    text: 'People planning a trip. The same structure powers what they see: destination pages, related articles, and links between the English and German versions of a story. Sizes compare monthly volume on a log scale: travelers (GA4 users), search engines (Google search clicks) and AI fetches. Travelers sit on top: their searches and questions are what set the engines and AI agents below them in motion. AI fetches are counted before the cache, every article page included.',
   },
   'sys:html': {
     title: 'HTML pages',

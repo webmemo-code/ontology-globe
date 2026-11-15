@@ -28,6 +28,7 @@ export const GHOST_SHELL = 0.965;
 const TOWER_Y = 4;
 const OUTPUT_Y = 22;
 const CONSUMER_Y = 38;
+const TRAVELER_LIFT = 13; // travelers float this far above the readers' floor, over the engines and agents
 // Draw order: haze and streams first, then the glass (sorted back to front by
 // distance within one renderOrder), then rims (and the satellites), then the motes on top.
 const ORDER = { haze: 1, stream: 2, glass: 3, rim: 4, mote: 5 };
@@ -325,7 +326,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   // dots; size = relative monthly volume (log-scaled upstream).
   type Reader = { key: string; title: string; field: string; from: string[]; tier: string | null };
   const consumers: Reader[] = [
-    { key: 'sys:google', title: 'Google Search', field: 'google', tier: TIER_COLORS.search, from: ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy'] },
+    { key: 'sys:google', title: 'Search engines', field: 'google', tier: TIER_COLORS.search, from: ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy'] },
     { key: 'sys:ai-training', title: 'AI training', field: 'ai-training', tier: TIER_COLORS.training, from: ['sys:html', 'sys:llmstxt', 'sys:okf', 'sys:entitymap'] },
     { key: 'sys:ai-search', title: 'AI search', field: 'ai-search', tier: TIER_COLORS.search, from: ['sys:html', 'sys:jsonld', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
     { key: 'sys:assistants', title: 'AI assistants', field: 'assistants', tier: TIER_COLORS.user, from: ['sys:html', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
@@ -339,15 +340,21 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   // it, at every turn of the circle, is tried (5! x 360 is nothing), and the
   // one with the shortest total beams down to the outputs each reader reads
   // wins, so a reader hangs over what it reads.
-  const slots = placeOnCircle(
-    consumers.map(({ from }) => from.map((k) => base.get(k)!)),
+  // Travelers are left out of the circle: they float above it, on the axis,
+  // because their searches and questions set the engines and AI agents below
+  // them in motion.
+  const ringed = consumers.filter((c) => c.key !== 'sys:travelers');
+  const ring = placeOnCircle(
+    ringed.map(({ from }) => from.map((k) => base.get(k)!)),
     CONSUMER_RADIUS,
   );
+  const slots = consumers.map((c) => (c.key === 'sys:travelers' ? null : ring[ringed.indexOf(c)]));
   consumers.forEach(({ key, title, field, from, tier }, i) => {
     const given = numbers?.consumers[field];
     const w = given ?? NEUTRAL_WEIGHT;
     const size = 1.4 + 2.4 * w; // satellite radius / traveler cluster radius
-    const centre = new THREE.Vector3(slots[i].x, CONSUMER_Y + 3, slots[i].z);
+    const slot = slots[i];
+    const centre = slot ? new THREE.Vector3(slot.x, CONSUMER_Y + 3, slot.z) : new THREE.Vector3(0, CONSUMER_Y + TRAVELER_LIFT, 0);
     // Invisible pick proxy: wireframes and tiny dots are hard to hit.
     const proxy = new THREE.Mesh(new THREE.SphereGeometry(size + 0.8, 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
     proxy.position.copy(centre);
@@ -377,7 +384,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
       }
     }
     // Labels sit outward of their reader, so two in line of sight keep both names.
-    labels.push({ text: title, pos: { x: centre.x * 1.3, y: centre.y + size + 1.2, z: centre.z * 1.3 }, color: '#ffffff', px: 12, priority: 4000 });
+    labels.push({ text: title, pos: { x: slot ? centre.x * 1.3 : centre.x, y: centre.y + size + 1.2, z: slot ? centre.z * 1.3 : centre.z }, color: '#ffffff', px: 12, priority: 4000 });
     // Stage 2, readers -> outputs: beams DOWN onto the top of each cylinder the
     // reader reads. Illustrative: there is no measured reader x output matrix,
     // so the reader's own weight is its total, split over its beams. A reader
@@ -406,7 +413,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     readerAt.set(key, centre);
   });
   // Many travelers arrive through a search engine or an AI answer, not
-  // directly: blue arcs from those readers over to the travelers.
+  // directly: blue arcs from those readers up to the travelers above them.
   const referrals = ['sys:google', 'sys:ai-search', 'sys:assistants'].map((from) => {
     const a = readerAt.get(from)!;
     const b = readerAt.get('sys:travelers')!;
