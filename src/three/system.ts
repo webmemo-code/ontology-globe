@@ -326,7 +326,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   // dots; size = relative monthly volume (log-scaled upstream).
   type Reader = { key: string; title: string; field: string; from: string[]; tier: string | null };
   const consumers: Reader[] = [
-    { key: 'sys:google', title: 'Search engines', field: 'google', tier: TIER_COLORS.search, from: ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy'] },
+    { key: 'sys:google', title: 'Search engines', field: 'search', tier: TIER_COLORS.search, from: ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy'] },
     { key: 'sys:ai-training', title: 'AI training', field: 'ai-training', tier: TIER_COLORS.training, from: ['sys:html', 'sys:llmstxt', 'sys:okf', 'sys:entitymap'] },
     { key: 'sys:ai-search', title: 'AI search', field: 'ai-search', tier: TIER_COLORS.search, from: ['sys:html', 'sys:jsonld', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
     { key: 'sys:assistants', title: 'AI assistants', field: 'assistants', tier: TIER_COLORS.user, from: ['sys:html', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
@@ -354,7 +354,8 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   );
   const slots = consumers.map((c) => (c.key === 'sys:travelers' ? null : ring[ringed.indexOf(c)]));
   consumers.forEach(({ key, title, field, from, tier }, i) => {
-    const given = numbers?.consumers[field];
+    // `search` (all measured engines, #35) falls back to `google` in older files.
+    const given = numbers?.consumers[field] ?? (field === 'search' ? numbers?.consumers.google : undefined);
     const w = given ?? NEUTRAL_WEIGHT;
     const size = 1.4 + 2.4 * w; // satellite radius / traveler cluster radius
     const slot = slots[i];

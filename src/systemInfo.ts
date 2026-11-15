@@ -48,7 +48,7 @@ export const SYSTEM_INFO: Record<string, SystemInfo> = {
   },
   'sys:google': {
     title: 'Search engines',
-    text: 'Google, Bing and others read the JSON-LD for rich results and entity understanding. The Wikidata links let them tie our articles to their own knowledge graphs. Its size counts Google search clicks, the one engine we measure.',
+    text: 'Google, Bing and others read the JSON-LD for rich results and entity understanding. The Wikidata links let them tie our articles to their own knowledge graphs. Its size counts the search clicks we measure, from the engines listed below.',
   },
   'sys:ai-training': {
     title: 'AI training',
