@@ -16,37 +16,30 @@ const cam = (p: [number, number, number], t: [number, number, number]): CameraKe
   target: { x: t[0], y: t[1], z: t[2] },
 });
 
+// Coordinates: Switzerland sits straight ahead on -z, north up; the topic wheel
+// lies flat at y = 0 with the two authors on its hub; place shells run from
+// r 22 (continents) to r 52 (sights) toward the skin at r 60.
 export const TOUR: TourStop[] = [
   {
-    title: 'It starts with one small globe',
-    text: 'Every place, topic, company and author our travel blogs write about is one small file in a shared ontology. Together they form this small globe: the single source of truth.',
-    view: 'system',
-    camera: cam([30, -6, 34], [0, -14, 0]),
-  },
-  {
-    title: 'Two blogs draw from it',
-    text: 'Travelmemo (English) and Reisememo (German) tag their articles with entities from the same ontology. The tower height shows how many articles each blog has.',
-    view: 'system',
-    camera: cam([0, 16, 52], [0, 6, 0]),
-  },
-  {
-    title: 'One source, many outputs',
-    text: 'From the ontology and the tags we generate the pages and images people see, structured data for Google, an EntityMap and llms.txt for AI crawlers, and a knowledge bundle for every article. Box height shows how many items each serves. Nothing is maintained twice.',
-    view: 'system',
-    camera: cam([0, 40, 64], [0, 26, 0]),
-  },
-  {
-    title: 'The small globe grows into the big one',
-    text: 'Every dot on its skin is one article, at the place it is about: orange for English, grey for German. The dotted land is the real map.',
+    title: 'One globe, every article',
+    text: 'Every dot on the skin is one article, at the place it is about: orange for Travelmemo, grey for Reisememo. The dotted land is the real map, turned so Switzerland, where we live, faces you.',
+    // Below the equator, looking up at Europe.
+    camera: cam([16, -50, -126], [0, 10, 0]),
   },
   {
     title: 'Every country carries two bars',
-    text: 'Each country carries a pair of bars, orange for Travelmemo and grey for Reisememo, as tall as the number of articles (on a log scale). Switzerland, where we live, is the dense cluster in the middle.',
+    text: 'Each country carries a pair of bars, orange for Travelmemo and grey for Reisememo, as tall as the number of articles (on a log scale). Switzerland is the dense cluster in the middle.',
     select: 'places/switzerland',
   },
   {
-    title: 'Every place knows its stories',
-    text: 'Countries, regions, towns and sights hang inside the globe under their own spot on the map, each linked to the place that contains it. Select Zermatt and its articles light up.',
+    title: 'Step inside: every place knows its stories',
+    text: 'Countries, regions, towns and sights hang inside the globe under their own spot on the map, continents nearest the centre, sights nearest the skin. Colour follows your gaze; the rest stays grey until you look at it.',
+    // From just below the wheel at the centre, out through the shells towards the Alps.
+    camera: cam([7, -7, 6], [0, -1, -50]),
+  },
+  {
+    title: 'Select Zermatt and its articles light up',
+    text: 'Every place is linked to the place that contains it, so an article about Zermatt also belongs to Valais, Switzerland and Europe.',
     select: 'places/zermatt',
   },
   {
@@ -55,23 +48,44 @@ export const TOUR: TourStop[] = [
     select: 'trips/glacier-express',
   },
   {
-    title: 'Topics form a wheel in the middle',
-    text: 'Themes like food, hiking or boutique hotels have no place on the map, so they sit on a wheel inside the globe, grouped by family: the broader the theme, the nearer the centre. Select one and bold lines run to the countries where we write about it most.',
+    title: 'Topics stand on a wheel in the middle',
+    text: 'Themes like food, hiking or boutique hotels have no place on the map, so they stand on a wheel at the centre, grouped by family. The further out, the more articles; the taller, the more AI agents fetch it. Select one and bold lines run to the countries where we write about it most.',
     select: 'topics/culinary-tourism',
+    // From above the rim, the whole wheel and its towers at a glance.
+    camera: cam([24, 15, 27], [0, 1, 0]),
   },
   {
-    title: 'The two of us, at the zenith',
-    text: 'Above everything are the two authors who write both blogs. Every article is signed by one of us, with the same identity on both sites.',
-    camera: cam([0, 4, 6], [0, 44, -6]),
+    title: 'Every theme starts with the two of us',
+    text: 'At the hub of the wheel stand the two authors who write both blogs. Every article is signed by one of us, with the same identity on both sites.',
+    // Low between the towers, looking in at the hub.
+    camera: cam([9, 3.5, 13], [0, 4, 0]),
   },
   {
-    title: 'Companies are the floor',
+    title: 'Companies hang over their headquarters',
     text: 'Airlines, hotel brands and booking platforms each carry a verified Wikidata ID, so search engines and AI assistants can tell which "Swiss" we mean.',
     select: 'organizations/swiss-international-air-lines',
   },
   {
+    title: 'It all comes from one small globe',
+    text: 'Behind the scenes, every place, topic, company and author is one small file in a shared ontology. Together they form this small globe: the single source of truth.',
+    view: 'system',
+    camera: cam([30, -6, 34], [0, -14, 0]),
+  },
+  {
+    title: 'Two blogs draw from it',
+    text: 'Travelmemo (English) and Reisememo (German) tag their articles with entities from the same ontology. The box size shows how many articles each blog has.',
+    view: 'system',
+    camera: cam([0, 16, 52], [0, 6, 0]),
+  },
+  {
+    title: 'One source, many outputs, many readers',
+    text: 'From the ontology and the tags we generate the pages and images people see, structured data for search engines, an EntityMap and llms.txt for AI crawlers, and a knowledge bundle for every article. Search engines and AI agents pick them up from there; travelers set them in motion. Nothing is maintained twice.',
+    view: 'system',
+    camera: cam([0, 44, 70], [0, 28, 0]),
+  },
+  {
     title: 'Explore it yourself',
-    text: 'Step back outside the globe. Click any tile, box or face to drill down, or search for a place you know.',
-    camera: cam([60, 40, -140], [0, 0, 0]),
+    text: 'Back to the globe. Click any dot, cylinder or face to drill down, or search for a place you know.',
+    camera: cam([16, -50, -126], [0, 10, 0]),
   },
 ];

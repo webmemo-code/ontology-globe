@@ -91,13 +91,14 @@ export function domeLayout(graph: Graph): Map<string, Vec3> {
     pos.set(n.key, toVec(scale(dir.get(n.key)!, r)));
   }
 
-  // Topics are the sky, companies the floor, authors at the zenith.
+  // Topics are the sky, companies the floor; the two authors stand at the hub
+  // of the topic wheel, where every theme starts (the wheel overrides topics).
   const byClass = (c: string) => graph.nodes.filter((n) => n.class === c).sort((a, b) => a.key.localeCompare(b.key));
   const topics = byClass('topics');
   ring(topics.length, 40, 52).forEach((v, i) => pos.set(topics[i].key, toVec(v)));
   const orgs = byClass('organizations');
   ring(orgs.length, 40, -50, 0.1).forEach((v, i) => pos.set(orgs[i].key, toVec(v)));
-  byClass('people').forEach((n, i) => pos.set(n.key, { x: (i - 0.5) * 9, y: 44, z: -6 }));
+  byClass('people').forEach((n, i) => pos.set(n.key, { x: (i - 0.5) * 4.4, y: 3.6, z: 0 }));
 
   // A trip floats just inside its first stop.
   for (const n of byClass('trips')) {

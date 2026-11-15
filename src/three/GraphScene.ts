@@ -726,7 +726,7 @@ export class GraphScene {
     b.halo.scale.setScalar(b.size * (tier === 'top10' ? 3.4 : 2.4));
     if (b.face) {
       const person = node.class === 'people';
-      const f = this.view === 'system' ? 1.3 : person ? 6.5 : Math.max(2.2, b.size * (node.type === 'Country' ? 1.05 : node.class === 'places' ? 1.25 : 1.5));
+      const f = this.view === 'system' ? 1.3 : person ? 3.4 : Math.max(2.2, b.size * (node.type === 'Country' ? 1.05 : node.class === 'places' ? 1.25 : 1.5));
       b.face.scale.set(f * (b.face.userData.aspect ?? 1), f, 1);
       // Emblems stay a little see-through; an orphan's flag or logo fades like its outline would.
       L.face = dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;

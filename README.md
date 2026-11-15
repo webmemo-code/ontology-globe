@@ -42,12 +42,12 @@ read them. Click any tile for a plain-language explanation.
 | Cylinder | One entity. Width = articles; height = how often AI agents fetched it in the last 30 days, stretched over the range of its class; no fetches = a flat disc |
 | Spotlight | Entities are grey ghosts; colour follows the centre of the screen. Places orange (deep to pale by level), topics violet by family, organizations rose, trips gold, people ivory. The selection, its neighbours and search hits stay lit. At most 8 labels at a time (5 on phones) |
 | Flicker | An entity flickers in full colour while a reader or an AI agent is on it; from outside, an agent's fetch shows as a soft pulse on the skin above it |
-| Place shells | Places by level: continents nearest you, sights nearest the skin. Countries carry their flag; companies hang over their headquarters with their logo; the authors' faces sit at the zenith |
-| Topic wheel | Topics stand on a level wheel in the middle. Direction = family. Distance from the hub = articles on both blogs, on one log scale for all families: few near the hub, many towards the rim. The scale is a faint disc of bands that narrow towards each decade's end, like log paper, labelled 1, 10, 100, 1000 articles |
+| Place shells | Places by level: continents nearest you, sights nearest the skin. Countries carry their flag; companies hang over their headquarters with their logo |
+| Topic wheel | Topics stand on a level wheel in the middle. Direction = family. Distance from the hub = articles on both blogs, on one log scale for all families: few near the hub, many towards the rim. The scale is a faint disc of bands that narrow towards each decade's end, like log paper, labelled 1, 10, 100, 1000 articles. The two authors stand at its hub: every theme starts with them |
 | Gold tubes | Trips, drawn stop by stop in itinerary order |
 | Halo / outline | Top 10% or top 25% search performer / orphan with no article yet |
 
-**Select** an entity (click it, search, or follow the guided tour) and its
+**Select** an entity (click it, search, or follow the guided tour, which opens below the equator looking up at Europe) and its
 article dots light up, with rays out to each. A place also opens its **lens**:
 the regions, towns and sights inside it with their article counts per blog,
 and the photos of its articles. An article draws rays to its entities.
