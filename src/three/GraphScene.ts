@@ -117,6 +117,8 @@ interface Box {
   /** Height: AI fetches of the entity when the snapshot has them, else the diameter. */
   height: number;
   detail: { value: number };
+  /** How far the cylinder is raised so its base sits on the plane (topics on the wheel). */
+  lift: number;
   /** Face saturation: 0 = grey ghost, 1 = full colour (set by paint). */
   sat: { value: number };
   /** What styleBox wants when fully lit; the spotlight blends from the ghost look towards it. */
@@ -353,7 +355,7 @@ export class GraphScene {
     if (face) withDetailFade(face.material, detail, 0.08, 0.45, sat);
     this.scene.add(mesh, outline, glow, ...(face ? [face] : []));
     const lit = { color: new THREE.Color(), emissive: 0, fill: 0, line: 0, face: 0, faceTint: new THREE.Color(), ghostFill: 0, ghostLine: 0, ghostFace: 0, haloOn: false, haloOp: 0 };
-    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, height: 1, detail, sat, lit, spot: 0, flick: 0, drawn: -1, hold: 0, labelled: false, labelPriority: 0 };
+    return { mesh, outline, halo: glow, face, base: { ...base }, size: 1, height: 1, detail, sat, lift: 0, lit, spot: 0, flick: 0, drawn: -1, hold: 0, labelled: false, labelPriority: 0 };
   }
 
   private buildNodes() {
@@ -371,7 +373,7 @@ export class GraphScene {
   }
 
   private place(b: Box) {
-    b.mesh.position.set(b.base.x, b.base.y, b.base.z);
+    b.mesh.position.set(b.base.x, b.base.y + b.lift, b.base.z);
     b.outline.position.copy(b.mesh.position);
     b.halo.position.copy(b.mesh.position);
     b.face?.position.copy(b.mesh.position);
@@ -428,16 +430,17 @@ export class GraphScene {
     const add = (segs: number[], opacity: number) => {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(segs, 3));
-      const mat = new THREE.LineBasicMaterial({ color: '#989898', transparent: true, depthWrite: false, opacity });
+      // Light grey and additive: just bright enough to catch a little bloom.
+      const mat = new THREE.LineBasicMaterial({ color: '#d4d4d4', transparent: true, depthWrite: false, opacity, blending: THREE.AdditiveBlending });
       withDetailFade(mat, this.globeDetail, 0.05);
       this.wheel.add(new THREE.LineSegments(g, mat));
     };
-    add(circle(R), 0.7);
-    add([...circle(5), ...circle((5 + WHEEL_R) / 2)], 0.25);
-    add(sectors.flatMap((s) => radial(s.from - 0.03, 3, R)), 0.45);
+    add(circle(R), 0.9);
+    add([...circle(5), ...circle((5 + WHEEL_R) / 2)], 0.32);
+    add(sectors.flatMap((s) => radial(s.from - 0.03, 3, R)), 0.55);
     const ticks: number[] = [];
     for (let i = 0; i < 96; i++) ticks.push(...radial((2 * Math.PI * i) / 96, R, R + (i % 4 === 0 ? 1.1 : 0.5)));
-    add(ticks, 0.6);
+    add(ticks, 0.75);
     for (const s of sectors) {
       this.labels.set(`wheel:${s.name}`, s.name.toUpperCase(), { ...wheelPoint(s.mid, WHEEL_R + 4), y: 0.6 }, 2500, { px: 12, color: '#BDBDBD', views: ['graph'] });
     }
@@ -682,6 +685,9 @@ export class GraphScene {
     // weights keep similar heights and the most fetched stand tallest.
     const k = this.aiSpan.get(node.key) ?? 0;
     b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.3 + 6.2 * k : 0.2;
+    // On the wheel, cylinders stand on the grid like bars instead of floating around it.
+    b.lift = topic ? b.height / 2 : 0;
+    this.place(b);
     scaleBox(b, 1);
     const L = b.lit;
     L.color.set(entityColor(node));
@@ -948,7 +954,7 @@ export class GraphScene {
   }
 
   private anchor(b: Box): Vec3 {
-    const lift = b.face ? b.face.scale.y / 2 : b.size / 2;
+    const lift = b.face ? b.face.scale.y / 2 : b.lift ? 2 * b.lift + 0.4 : b.size / 2;
     return { x: b.base.x, y: b.base.y + lift, z: b.base.z };
   }
 
