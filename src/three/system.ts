@@ -334,6 +334,9 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   ];
   const readerAt = new Map<string, THREE.Vector3>();
   const tumblers: THREE.Mesh[] = [];
+  // Little boxes of content travelling down each retrieval beam, the counterpart
+  // of the motes rising below: more of them for a heavier reader's beam.
+  const parcels: { a: THREE.Vector3; b: THREE.Vector3; phase: number; rate: number; color: THREE.Color; size: number }[] = [];
   const beamShifts: { value: number }[] = [];
   const READER_DOT = new THREE.Color('#FF9000').multiplyScalar(0.78); // dimmed like the live dots: crisp, no bloom
   // Readers sit on a circle above the outputs. Every order of readers around
@@ -392,9 +395,14 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     const level = w / from.length;
     const opacity = given === undefined ? 0.25 : Math.min(1, 0.4 + 2.4 * level);
     const pos: number[] = [];
+    const parcelColor = new THREE.Color(tier ?? READER_DOT);
+    const perBeam = given === undefined ? 1 : 1 + Math.round(8 * level);
     for (const k of from) {
       const top = outTops[outputs.findIndex(([ok]) => ok === k)];
       pos.push(centre.x, centre.y - size, centre.z, top.x, top.y, top.z);
+      const a = new THREE.Vector3(centre.x, centre.y - size, centre.z);
+      for (let j = 0; j < perBeam; j++)
+        parcels.push({ a, b: top.clone(), phase: (j + 0.31 * parcels.length) / perBeam % 1, rate: 0.12, color: parcelColor, size: 0.32 + 0.18 * Math.min(1, 4 * level) });
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -467,6 +475,18 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   moteLayer.renderOrder = ORDER.mote;
   group.add(moteLayer);
 
+  // One instanced mesh for all parcels; each fades by scale so none pops.
+  const parcelMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85, depthWrite: false }), Math.max(1, parcels.length));
+  parcels.forEach((pc, i) => parcelMesh.setColorAt(i, pc.color));
+  parcelMesh.count = parcels.length;
+  parcelMesh.frustumCulled = false;
+  parcelMesh.renderOrder = ORDER.mote;
+  group.add(parcelMesh);
+  const pm = new THREE.Matrix4();
+  const pq = new THREE.Quaternion();
+  const pe = new THREE.Euler();
+  const ps = new THREE.Vector3();
+
   const tmp = new THREE.Vector3();
   // Own clock that stands still under reduced motion and resumes without a jump.
   let time = 0;
@@ -484,6 +504,14 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     });
     mgeo.attributes.position.needsUpdate = true;
     mgeo.attributes.color.needsUpdate = true;
+    parcels.forEach((pc, i) => {
+      const k = (time * pc.rate + pc.phase) % 1;
+      tmp.lerpVectors(pc.a, pc.b, k);
+      pq.setFromEuler(pe.set(time * 1.3 + i, time * 0.9 + i * 2, 0));
+      ps.setScalar(pc.size * Math.sin(Math.PI * k));
+      parcelMesh.setMatrixAt(i, pm.compose(tmp, pq, ps));
+    });
+    parcelMesh.instanceMatrix.needsUpdate = true;
     // Satellites tumble as in the globe view; the beams' dashes flow down.
     tumblers.forEach((m) => m.rotation.set(time * 0.7, time * 1.1, 0));
     for (const sh of beamShifts) sh.value = -time * 4;
