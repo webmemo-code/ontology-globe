@@ -171,6 +171,8 @@ export class GraphScene {
   private postsByKey = new Map<string, GraphPost>();
   /** Whether the snapshot carries AI fetch weights; without them cylinders keep height = width. */
   private hasAi = false;
+  /** AI fetch weight as a rank within the entity's class, 0..1 (see applyStyle). */
+  private aiRank = new Map<string, number>();
   /** Entities an agent fetched in the live feed -> tier colour; their outline lights up. */
   private liveEntities = new Map<string, string>();
   /** Entities currently visited (bot entity hits, entities of articles read or fetched): they flicker. */
@@ -675,7 +677,11 @@ export class GraphScene {
     // its own scale (0.4..5 units), so a big
     // topic is not tall just for being big; no fetches = a flat disc.
     const ai = s?.ai ?? 0;
-    b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.4 + 4.6 * ai : 0.2;
+    // The weights bunch (all topics sit between 0.63 and 1), so a direct map read as
+    // one height: use the rank within the entity's class, curved, so the least
+    // fetched stay stubby and the most fetched tower.
+    const k = this.aiRank.get(node.key) ?? 0;
+    b.height = !this.hasAi || !present ? b.size : ai > 0 ? 0.3 + 6.2 * Math.pow(k, 1.8) : 0.2;
     scaleBox(b, 1);
     const L = b.lit;
     L.color.set(entityColor(node));
@@ -704,6 +710,17 @@ export class GraphScene {
   }
 
   private applyStyle() {
+    // AI fetch weight -> rank 0..1 within each class (ties share the lower rank).
+    this.aiRank.clear();
+    const byClass = new Map<string, { key: string; ai: number }[]>();
+    for (const n of this.graph.nodes) {
+      const ai = statsFor(n, this.mode)?.ai ?? 0;
+      if (ai > 0) (byClass.get(n.class) ?? byClass.set(n.class, []).get(n.class)!).push({ key: n.key, ai });
+    }
+    for (const list of byClass.values()) {
+      const sorted = list.map((e) => e.ai).sort((a, b) => a - b);
+      for (const e of list) this.aiRank.set(e.key, list.length > 1 ? sorted.indexOf(e.ai) / (list.length - 1) : 1);
+    }
     const hl = this.highlight();
     const maxSize = this.view === 'system' ? 1.1 : 3.6;
     const ranked = [...this.graph.nodes].sort((a, b) => (statsFor(b, this.mode)?.posts ?? 0) - (statsFor(a, this.mode)?.posts ?? 0));
