@@ -8,7 +8,7 @@ topic, an organization, a trip or an author.
 **Live:** https://webmemo-code.github.io/ontology-globe/
 (`?live=demo` feeds made-up traffic for previews and recordings)
 
-![Inside the globe: the topic wheel in the spotlight](docs/globe-inside.jpg)
+![Inside the globe: the topic wheel in the spotlight](docs/screens/globe-inside.jpg)
 
 ## Two views
 
@@ -16,14 +16,14 @@ topic, an organization, a trip or an author.
 see the places hanging on their shells and the topics standing on a wheel in
 the middle.
 
-![The globe from outside, with live readers and AI agents](docs/globe-outside.jpg)
+![The globe from outside, with live readers and AI agents](docs/screens/globe-outside.jpg)
 
 **⬡ How it works.** The ontology is a small globe, the single source of
 truth. Stacked above it are the two WordPress sites, the generated outputs
 (JSON-LD, taxonomies, EntityMap, llms.txt, OKF, photos) and the groups that
 read them. Click any tile for a plain-language explanation.
 
-![How it works](docs/how-it-works.jpg)
+![How it works](docs/screens/how-it-works.jpg)
 
 ## Reading the globe
 
@@ -53,7 +53,7 @@ the regions, towns and sights inside it with their article counts per blog,
 and the photos of its articles. An article draws rays to its entities.
 **Reset view** flies back to the start.
 
-![The lens on Switzerland](docs/lens.jpg)
+![The lens on Switzerland](docs/screens/lens.jpg)
 
 ## Live
 
@@ -77,7 +77,7 @@ The panels become a strip and swipeable cards (held sideways: the panels in
 the left half, the globe in the right half). The top bar keeps Live, search,
 Reset view and Tour as buttons.
 
-<img src="docs/phone.jpg" alt="The globe on a phone" width="300">
+<img src="docs/screens/phone.jpg" alt="The globe on a phone" width="300">
 
 ## Lifted from the Periodic Cube of AI
 
