@@ -2,52 +2,82 @@
 
 Interactive 3D map of the knowledge graph behind
 [travelmemo.com](https://travelmemo.com) and [reisememo.ch](https://reisememo.ch).
-Every box is one entity from the ontology both blogs share: a place, a topic,
-an organization, a trip or an author.
+Every cylinder is one entity from the ontology both blogs share: a place, a
+topic, an organization, a trip or an author.
 
 **Live:** https://webmemo-code.github.io/ontology-globe/
+(`?live=demo` feeds made-up traffic for previews and recordings)
 
-![Inside the globe](docs/globe-inside.jpg)
+![Inside the globe: the topic wheel in the spotlight](docs/globe-inside.jpg)
 
 ## Two views
 
-**⬡ How it works.** The entities form a small globe: the ontology, the
-single source of truth. Stacked above it are the two WordPress sites, the
-generated outputs (JSON-LD, taxonomies, EntityMap, llms.txt, OKF) and the
-groups that read them. Click any tile for a plain-language explanation.
+**◍ Globe.** It opens from outside, with Switzerland facing you. Fly inside to
+see the places hanging on their shells and the topics standing on a wheel in
+the middle.
+
+![The globe from outside, with live readers and AI agents](docs/globe-outside.jpg)
+
+**⬡ How it works.** The ontology is a small globe, the single source of
+truth. Stacked above it are the two WordPress sites, the generated outputs
+(JSON-LD, taxonomies, EntityMap, llms.txt, OKF, photos) and the groups that
+read them. Click any tile for a plain-language explanation.
 
 ![How it works](docs/how-it-works.jpg)
 
-**◍ Globe.** The small globe grows into the big one. It opens from outside,
-with Switzerland facing you; fly inside to see the places hanging on their shells.
+## Reading the globe
+
+**On the skin**
 
 | Encoding | Meaning |
 |---|---|
-| Dot on the skin | One article at the place it is about (orange EN, grey DE); brightness and size = relative search tier |
-| Bars on a country | Article count per blog on a log scale: orange Travelmemo, grey Reisememo |
 | Dotted land | True geography (Natural Earth); a selected country is outlined |
-| Boxes inside | Places on shells by level: continents nearest you, sights nearest the skin |
-| Topic wheel | Topics stand on a level wheel inside the globe. Direction = family. Distance from the centre = articles on both blogs, on one log scale for all families: few near the hub, many towards the rim. The scale is a flat disc of soft bands, one per 1–9 of each decade, each fading in towards its end: like log paper, the bands narrow towards each decade's end, and the disc brightens towards the rim. The decades are labelled 1, 10, 100, 1000 articles. Height = how often AI agents fetched the topic in the last 30 days, stretched over the range of its class. Companies hang over their headquarters, the authors' faces at the zenith |
-| Lens | Select a place to open its lens: the regions, towns and sights inside it with their article counts per blog, and the photos of its articles |
-| Spotlight | Inside, entities are grey ghosts; colour follows the centre of the screen: places orange (deep to pale by level), topics violet by family, organizations rose, trips gold, people ivory |
+| Dot | One article at the place it is about (orange Travelmemo, grey Reisememo); brightness and size = relative search tier |
+| Two bars on a country | Articles per blog on a log scale: orange Travelmemo, grey Reisememo |
+
+**Inside**
+
+| Encoding | Meaning |
+|---|---|
+| Cylinder | One entity. Width = articles; height = how often AI agents fetched it in the last 30 days, stretched over the range of its class; no fetches = a flat disc |
+| Spotlight | Entities are grey ghosts; colour follows the centre of the screen. Places orange (deep to pale by level), topics violet by family, organizations rose, trips gold, people ivory. The selection, its neighbours and search hits stay lit. At most 8 labels at a time (5 on phones) |
 | Flicker | An entity flickers in full colour while a reader or an AI agent is on it; from outside, an agent's fetch shows as a soft pulse on the skin above it |
+| Place shells | Places by level: continents nearest you, sights nearest the skin. Countries carry their flag; companies hang over their headquarters with their logo; the authors' faces sit at the zenith |
+| Topic wheel | Topics stand on a level wheel in the middle. Direction = family. Distance from the hub = articles on both blogs, on one log scale for all families: few near the hub, many towards the rim. The scale is a faint disc of bands that narrow towards each decade's end, like log paper, labelled 1, 10, 100, 1000 articles |
 | Gold tubes | Trips, drawn stop by stop in itinerary order |
 | Halo / outline | Top 10% or top 25% search performer / orphan with no article yet |
-| Select | An entity lights its article dots in gold (dim amber where filed under another country), with rays out to each; an article draws rays to its entities |
 
-![The globe from outside](docs/globe-outside.jpg)
+**Select** an entity (click it, search, or follow the guided tour) and its
+article dots light up, with rays out to each. A place also opens its **lens**:
+the regions, towns and sights inside it with their article counts per blog,
+and the photos of its articles. An article draws rays to its entities.
+**Reset view** flies back to the start.
 
-**● Live** (globe view, or `?live` in the URL): Readers of the last 30 minutes glow at their country, with a
-flowing line to the article they read (GA4 Realtime): solid orange for Travelmemo,
-dashed orange for Reisememo. AI agents are satellites coloured by purpose
-(training, search, on a user's behalf): each hovers over the country its request
-came from (Cloudflare on Travelmemo, IPinfo Lite on Reisememo) on a thin tether,
-and beams to the article or entity it fetched from there. When the country is
-unknown it hovers over the operator's headquarters instead.
+![The lens on Switzerland](docs/lens.jpg)
 
-Agents on article pages are not
-seen, because the page cache serves those without PHP. `?live=demo` feeds
-made-up traffic for previews and recordings.
+## Live
+
+**● Live** (globe view, or `?live` in the URL). The panels around the globe
+show the active reads per blog, the AI agents by purpose and what each output
+served; the globe is framed between them.
+
+- **Readers** of the last 30 minutes glow at their city, with a flowing line to
+  the article they read (GA4 Realtime): solid orange for Travelmemo, dashed
+  orange for Reisememo.
+- **AI agents** are satellites coloured by purpose (training, search, on a
+  user's behalf). Each hovers over the country its request came from
+  (Cloudflare on Travelmemo, IPinfo Lite on Reisememo) and beams to the article
+  or entity it fetched. When the country is unknown it hovers over the
+  operator's headquarters instead. Agents on article pages are not seen,
+  because the page cache serves those without PHP.
+
+## On a phone
+
+The panels become a strip and swipeable cards (held sideways: the panels in
+the left half, the globe in the right half). The top bar keeps Live, search,
+Reset view and Tour as buttons.
+
+<img src="docs/phone.jpg" alt="The globe on a phone" width="300">
 
 ## Lifted from the Periodic Cube of AI
 
