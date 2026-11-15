@@ -87,6 +87,8 @@ const LABEL_SPOT = 0.35;
 const GHOST_FILL = 0.1;
 const GHOST_LINE = 0.28;
 const GHOST_FACE = 0.18;
+const GHOST_ROUGH = 0.9;
+const LIT_ROUGH = 0.3;
 
 /** Per-key stable pseudo-random in [0, 1) for a step number. */
 function stepRand(step: number, seed: number): number {
@@ -357,7 +359,7 @@ export class GraphScene {
 
   private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
     const color = GHOST.clone(); // every entity starts as a ghost; applyStyle and the spotlight colour it
-    const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color, emissive: color, transparent: true, depthWrite: false, metalness: 0.2, roughness: 0.4 }));
+    const mesh = new THREE.Mesh(box, new THREE.MeshStandardMaterial({ color, emissive: color, transparent: true, depthWrite: false, metalness: 0.1, roughness: GHOST_ROUGH }));
     mesh.userData.key = node.key;
     const outline = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, transparent: true }));
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: halo, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
@@ -713,7 +715,7 @@ export class GraphScene {
     const L = b.lit;
     L.color.set(entityColor(node));
     // Authors sit on every article, so their tier says little; keep them from outshining the map.
-    L.emissive = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : node.class === 'topics' ? 0.22 : 1); // topics sit close together on the wheel: full glow blooms into one blob
+    L.emissive = orphan ? 0 : GLOW[s!.perf] * (node.class === 'people' ? 0.45 : node.class === 'topics' ? 0.4 : 1); // topics stand apart on the wheel now (#28), but full glow still blooms neighbours together
     // Orphans are outlines only: in the ontology, no article yet.
     L.fill = b.face || orphan ? 0 : dim ? 0.07 : 0.85;
     L.line = b.face ? 0 : !present ? 0.1 : dim ? 0.08 : orphan ? 0.45 : 0.9;
@@ -858,6 +860,9 @@ export class GraphScene {
     setBase(m, c);
     ((m.userData.emissive ??= new THREE.Color()) as THREE.Color).copy(c);
     m.emissiveIntensity = L.emissive * s;
+    // Glass like the How it works tiles once lit (#33): low roughness lets the
+    // under-light's streak cross the bloom threshold; ghosts stay matte and calm.
+    m.roughness = THREE.MathUtils.lerp(GHOST_ROUGH, LIT_ROUGH, s);
     m.opacity = THREE.MathUtils.lerp(L.ghostFill, L.fill, s);
     const o = v.outline.material;
     const fetched = this.view === 'graph' ? this.liveEntities.get(v.key) : undefined;
