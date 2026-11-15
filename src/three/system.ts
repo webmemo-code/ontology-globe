@@ -1,12 +1,16 @@
 // Scene 1, "the stack": how one ontology becomes everything the sites
 // publish. A mini globe on the bottom floor (the globe view's shell, land and
 // coast, scaled down) stands for the ontology; this module builds the floors
-// above it and the beams particles travel along.
+// above it, the soft haze the blogs draw from it, and the quiet streams that
+// pulse upward from level to level.
 //
 // Heights and sizes carry data from public/system.json: an output box is as
 // tall as the log of how many items it serves, and a reader sphere is as big
 // as its (log-scaled, relative) monthly volume. Without that file the scene
 // falls back to even sizes.
+//
+// Glass: the cylinders and spheres are see-through and do not write depth, so
+// whatever stands behind them reads at every angle; their rims carry the form.
 import * as THREE from 'three';
 import type { Feature, Geometry } from 'geojson';
 import { buildLand } from './land';
@@ -21,6 +25,11 @@ export const GHOST_SHELL = 0.965;
 const TOWER_Y = 4;
 const OUTPUT_Y = 22;
 const CONSUMER_Y = 38;
+// Draw order: haze and streams first, then the glass (sorted back to front by
+// distance within one renderOrder), then rims, then the motes on top.
+const ORDER = { haze: 1, stream: 2, glass: 3, rim: 4, mote: 5 };
+/** Weight for a reader with no number in system.json: neutral, never zero. */
+const NEUTRAL_WEIGHT = 0.5;
 
 export interface SystemTile {
   key: string;
@@ -48,6 +57,22 @@ function fadeTexture(): THREE.CanvasTexture {
   g.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 256, 256);
+  return new THREE.CanvasTexture(c);
+}
+
+/** Vertical glow for the haze: clear at both ends, brightest low, so it seems to rise out of the globe. */
+function hazeTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createLinearGradient(0, 0, 0, 128); // canvas top = top of the haze
+  g.addColorStop(0, 'rgba(255,255,255,0)');
+  g.addColorStop(0.35, 'rgba(255,255,255,0.35)');
+  g.addColorStop(0.8, 'rgba(255,255,255,0.7)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 4, 128);
   return new THREE.CanvasTexture(c);
 }
 
@@ -87,15 +112,46 @@ export function placeOnCircle(targets: THREE.Vector3[][], radius: number): { x: 
   return out;
 }
 
+/**
+ * Particles along static arcs, lit only while `active` is one of the arc's end
+ * tiles (the glow eases in and out, so hovering does not flash them).
+ */
+function arcParticles(group: THREE.Group, curves: THREE.Curve<THREE.Vector3>[], ends: [string, string][], per: number, hex: string, size: number, speed: number) {
+  const pos = new Float32Array(curves.length * per * 3);
+  const col = new Float32Array(curves.length * per * 3);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ vertexColors: true, size, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  pts.frustumCulled = false;
+  pts.renderOrder = ORDER.mote;
+  group.add(pts);
+  const glow = curves.map(() => 0);
+  const c = new THREE.Color(hex);
+  const p = new THREE.Vector3();
+  return (time: number, active: string | null) => {
+    curves.forEach((curve, a) => {
+      glow[a] += ((active !== null && ends[a].includes(active) ? 1 : 0) - glow[a]) * 0.12;
+      for (let j = 0; j < per; j++) {
+        const i = a * per + j;
+        curve.getPoint((time * speed + j / per) % 1, p);
+        pos.set([p.x, p.y, p.z], i * 3);
+        col.set([c.r * glow[a], c.g * glow[a], c.b * glow[a]], i * 3);
+      }
+    });
+    geo.attributes.position.needsUpdate = true;
+    geo.attributes.color.needsUpdate = true;
+  };
+}
+
 export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRadius: number) {
   const group = new THREE.Group();
   const labels: { text: string; pos: Vec3; color: string; px: number; priority: number }[] = [];
   const pickables: THREE.Mesh[] = [];
-  // Each beam carries its particles: how many (the volume it stands for) and
-  // which share of them are Travelmemo's (the rest Reisememo's).
-  const segments: { a: THREE.Vector3; b: THREE.Vector3; share: number; n: number }[] = [];
+  // Upward streams (level to level): a thin line and one faint mote that
+  // rises along it. `level` is the stream's brightness, 0..1.
+  const streams: { a: THREE.Vector3; b: THREE.Vector3; level: number; color: THREE.Color; dashed: boolean }[] = [];
   const maxPosts = Math.max(...graph.sites.map((x) => x.posts), 1);
-  const blogFlow = (i: number) => ({ share: i === 0 ? 1 : 0, n: Math.round(4 + 12 * (graph.sites[i]?.posts ?? 0) / maxPosts) });
   const v = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
   const fade = fadeTexture();
 
@@ -116,14 +172,18 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     labels.push({ text: name, pos: { x: -r * 0.55, y: y + 0.5, z: r * 0.84 }, color: '#BDBDBD', px: 11, priority: 3000 });
   };
 
-  const tile = (t: SystemTile, color: string, r: number, h: number, opacity = 0.85) => {
-    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, transparent: true, opacity });
+  const tile = (t: SystemTile, color: string, r: number, h: number, opacity = 0.4) => {
+    // Glass: low emissive and low roughness so the under-light leaves a streak
+    // on the wall; no depth write so the tiles behind show through.
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3, roughness: 0.3, metalness: 0.1, transparent: true, opacity, depthWrite: false });
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, 48), mat);
+    mesh.renderOrder = ORDER.glass;
     mesh.position.set(t.at.x, t.at.y + h / 2, t.at.z);
     mesh.userData.key = t.key;
     // Rims only: a low threshold would also draw every side facet as a line.
     const edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 30), new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.6 }));
     edges.position.copy(mesh.position);
+    edges.renderOrder = ORDER.rim;
     group.add(mesh, edges);
     pickables.push(mesh);
     labels.push({ text: t.title, pos: { x: t.at.x, y: t.at.y + h + 0.4, z: t.at.z }, color: '#ffffff', px: 12, priority: 4000 });
@@ -144,6 +204,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   // Publishing: each blog a box whose VOLUME is its article count, with a
   // square section so all four sides are the same 3:1 face, the shape of a
   // wordmark, and the logo looks the same from every side.
+  const towerW: number[] = [];
   const towers = graph.sites.map((s, i) => {
     const h = 0.9 * Math.cbrt(Math.max(1, s.posts) / 9);
     const w = 3 * h;
@@ -165,9 +226,34 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
       face.emissiveMap = tex;
       face.needsUpdate = true;
     });
+    towerW[i] = w;
     return new THREE.Vector3(x, TOWER_Y + h, 0);
   });
-  towers.forEach((t, i) => segments.push({ a: globeTop, b: t.clone().setY(TOWER_Y), ...blogFlow(i) }));
+
+  // The blogs draw from the globe: a soft haze rising from its top into each
+  // blog's box, a few slow motes inside it, both stronger for the bigger blog.
+  const hazeTex = hazeTexture();
+  const motes: { a: THREE.Vector3; b: THREE.Vector3; off: THREE.Vector3; phase: number; rate: number; color: THREE.Color; level: number }[] = [];
+  const hazes = towers.map((top, i) => {
+    const heft = (graph.sites[i]?.posts ?? 0) / maxPosts;
+    const color = new THREE.Color(i === 0 ? '#FF9000' : '#989898');
+    const from = globeTop.clone();
+    const to = top.clone().setY(TOWER_Y);
+    const dir = to.clone().sub(from);
+    const mat = new THREE.MeshBasicMaterial({ color, map: hazeTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(towerW[i] * 0.45, 0.9, dir.length(), 32, 1, true), mat);
+    mesh.position.copy(from).addScaledVector(dir, 0.5);
+    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    mesh.renderOrder = ORDER.haze;
+    group.add(mesh);
+    const n = 2 + Math.round(4 * heft);
+    for (let j = 0; j < n; j++) {
+      const ang = j * 2.4 + i;
+      const spread = towerW[i] * 0.3 * ((j % 3) / 3 + 0.2);
+      motes.push({ a: from, b: to, off: new THREE.Vector3(Math.cos(ang) * spread, 0, Math.sin(ang) * spread), phase: j / n, rate: 0.045, color, level: 0.35 + 0.4 * heft });
+    }
+    return { mat, base: 0.16 + 0.26 * heft, i };
+  });
 
   // Generated outputs, on a circle so the links between them can show:
   // height = log of the items each one serves, radius = how often AI crawlers
@@ -198,7 +284,15 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     base.set(key, v(at));
     return new THREE.Vector3(at.x, OUTPUT_Y + h, at.z);
   });
-  // What points to what: arcs over the floor, flowing from the pointer to its target.
+  // Stage 1, blogs -> outputs: every blog feeds every output, up.
+  towers.forEach((t, i) => {
+    const heft = (graph.sites[i]?.posts ?? 0) / maxPosts;
+    const color = new THREE.Color(i === 0 ? '#FF9000' : '#989898');
+    for (const o of outTops) streams.push({ a: t, b: o.clone().setY(OUTPUT_Y), level: 0.25 + 0.35 * heft, color, dashed: false });
+  });
+  // What points to what: static arcs over the floor within one level (not data
+  // moving between levels, so not part of the upward flow). Their particles
+  // run only while a connected tile is hovered or selected.
   const links: [string, string][] = [
     ['sys:okf', 'sys:html'],
     ['sys:okf', 'sys:photos'],
@@ -218,15 +312,10 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     group.add(
       new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(arc.getPoints(40)),
-        new THREE.LineBasicMaterial({ color: '#FFB74D', transparent: true, opacity: 0.45 }),
+        new THREE.LineBasicMaterial({ color: '#FFB74D', transparent: true, opacity: 0.3, depthWrite: false }),
       ),
     );
-  const linkCount = arcs.length * 6;
-  const linkPositions = new Float32Array(linkCount * 3);
-  const lgeo = new THREE.BufferGeometry();
-  lgeo.setAttribute('position', new THREE.BufferAttribute(linkPositions, 3));
-  group.add(new THREE.Points(lgeo, new THREE.PointsMaterial({ color: '#FFE0B2', size: 0.5, transparent: true, opacity: 0.95 })));
-  for (const o of outTops) towers.forEach((t, i) => segments.push({ a: t, b: o.clone().setY(OUTPUT_Y), ...blogFlow(i) }));
+  const linkParticles = arcParticles(group, arcs, links, 6, '#FFE0B2', 0.5, 0.3);
 
   // Who reads it: sphere size = relative monthly volume (log-scaled upstream).
   const consumers: [string, string, string, string[]][] = [
@@ -246,26 +335,36 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     CONSUMER_RADIUS,
   );
   consumers.forEach(([key, title, field, from], i) => {
-    const w = numbers?.consumers[field] ?? 0.6;
+    const given = numbers?.consumers[field];
+    const w = given ?? NEUTRAL_WEIGHT;
     const size = 1 + 2.6 * w;
     const at = { x: slots[i].x, y: CONSUMER_Y, z: slots[i].z };
     const mesh = new THREE.Mesh(
       new THREE.IcosahedronGeometry(size, 1),
-      new THREE.MeshStandardMaterial({ color: '#4C96F2', emissive: '#4C96F2', emissiveIntensity: 0.7, flatShading: true, transparent: true, opacity: 0.9 }),
+      new THREE.MeshStandardMaterial({ color: '#4C96F2', emissive: '#4C96F2', emissiveIntensity: 0.4, roughness: 0.3, metalness: 0.1, flatShading: true, transparent: true, opacity: 0.42, depthWrite: false }),
     );
     mesh.position.set(at.x, at.y + size, at.z);
     mesh.userData.key = key;
-    group.add(mesh);
+    mesh.renderOrder = ORDER.glass;
+    // Facet edges as the rim: the glass itself is faint.
+    const rim = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 1), new THREE.LineBasicMaterial({ color: '#8FBEFF', transparent: true, opacity: 0.4, depthWrite: false }));
+    rim.position.copy(mesh.position);
+    rim.renderOrder = ORDER.rim;
+    group.add(mesh, rim);
     pickables.push(mesh);
     // Labels sit outward of their sphere, so two spheres in line of sight keep both names.
     labels.push({ text: title, pos: { x: at.x * 1.3, y: at.y + 2 * size + 1.2, z: at.z * 1.3 }, color: '#ffffff', px: 12, priority: 4000 });
-    // A reader's beams: particles as many as its monthly volume, split by blog.
-    const flow = { share: numbers?.share?.[field] ?? 0.5, n: Math.round(3 + 15 * w) };
-    for (const k of from) segments.push({ a: outTops[outputs.findIndex(([key]) => key === k)], b: v(at), ...flow });
+    // Stage 2, outputs -> readers. The streams are illustrative: there is no
+    // measured reader x output matrix, so the reader's own weight is its total,
+    // split over its streams (more connections do not make it heavier). The
+    // motes lean orange or grey by Travelmemo's share of the reader.
+    const mix = new THREE.Color('#989898').lerp(new THREE.Color('#FF9000'), numbers?.share?.[field] ?? 0.5);
+    for (const k of from)
+      streams.push({ a: outTops[outputs.findIndex(([key]) => key === k)], b: v(at), level: w / from.length, color: mix, dashed: given === undefined });
     spheres.set(key, mesh.position.clone());
   });
   // Many travelers arrive through a search engine or an AI answer, not
-  // directly: green arcs from those readers over to the travelers.
+  // directly: blue arcs from those readers over to the travelers.
   const referrals = ['sys:google', 'sys:ai-search', 'sys:assistants'].map((from) => {
     const a = spheres.get(from)!;
     const b = spheres.get('sys:travelers')!;
@@ -277,58 +376,75 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     group.add(
       new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(arc.getPoints(40)),
-        new THREE.LineBasicMaterial({ color: '#8FBEFF', transparent: true, opacity: 0.5 }),
+        new THREE.LineBasicMaterial({ color: '#8FBEFF', transparent: true, opacity: 0.3, depthWrite: false }),
       ),
     );
-  const refCount = referrals.length * 8;
-  const refPositions = new Float32Array(refCount * 3);
-  const rgeo = new THREE.BufferGeometry();
-  rgeo.setAttribute('position', new THREE.BufferAttribute(refPositions, 3));
-  group.add(new THREE.Points(rgeo, new THREE.PointsMaterial({ color: '#CFE2FA', size: 0.55, transparent: true, opacity: 0.95 })));
+  const refParticles = arcParticles(
+    group,
+    referrals,
+    ['sys:google', 'sys:ai-search', 'sys:assistants'].map((k): [string, string] => [k, 'sys:travelers']),
+    8,
+    '#CFE2FA',
+    0.55,
+    0.25,
+  );
 
-  const beamGeo = new THREE.BufferGeometry().setFromPoints(segments.flatMap(({ a, b }) => [a, b]));
-  group.add(new THREE.LineSegments(beamGeo, new THREE.LineBasicMaterial({ color: '#989898', transparent: true, opacity: 0.18 })));
-
-  // Data particles in the blogs' colours. Per beam, Travelmemo's share of them
-  // is interleaved evenly with Reisememo's, so a 30/70 beam reads as such.
-  const riders: { seg: number; k0: number }[] = [];
-  const colors: number[] = [];
-  const tm = new THREE.Color('#FF9000');
-  const rm = new THREE.Color('#989898');
-  segments.forEach((sg, seg) => {
-    for (let j = 0; j < sg.n; j++) {
-      riders.push({ seg, k0: j / sg.n + (seg % 7) * 0.13 });
-      const c = Math.floor((j + 1) * sg.share) > Math.floor(j * sg.share) ? tm : rm;
-      colors.push(c.r, c.g, c.b);
+  // Stream lines: thin and dim. A reader with no weight in system.json draws dashed.
+  const lineLayer = (dashed: boolean) => {
+    const list = streams.filter((x) => x.dashed === dashed);
+    if (!list.length) return;
+    const pos: number[] = [];
+    const col: number[] = [];
+    for (const { a, b, level, color } of list) {
+      const k = 0.1 + 0.55 * level;
+      pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      col.push(color.r * k, color.g * k, color.b * k, color.r * k, color.g * k, color.b * k);
     }
-  });
-  const count = riders.length;
-  const positions = new Float32Array(count * 3);
-  const pgeo = new THREE.BufferGeometry();
-  pgeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  pgeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  const particles = new THREE.Points(pgeo, new THREE.PointsMaterial({ vertexColors: true, size: 0.6, transparent: true, opacity: 0.95 }));
-  group.add(particles);
-  const tmp = new THREE.Vector3();
-  const animate = (t: number) => {
-    riders.forEach(({ seg, k0 }, i) => {
-      const { a, b } = segments[seg];
-      tmp.lerpVectors(a, b, (t * 0.25 + k0) % 1);
-      positions.set([tmp.x, tmp.y, tmp.z], i * 3);
-    });
-    pgeo.attributes.position.needsUpdate = true;
-    for (let i = 0; i < linkCount; i++) {
-      arcs[i % arcs.length].getPoint((t * 0.3 + i / linkCount) % 1, tmp);
-      linkPositions.set([tmp.x, tmp.y, tmp.z], i * 3);
-    }
-    lgeo.attributes.position.needsUpdate = true;
-    for (let i = 0; i < refCount; i++) {
-      referrals[i % referrals.length].getPoint((t * 0.25 + i / refCount) % 1, tmp);
-      refPositions.set([tmp.x, tmp.y, tmp.z], i * 3);
-    }
-    rgeo.attributes.position.needsUpdate = true;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const opts = { vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
+    const lines = new THREE.LineSegments(geo, dashed ? new THREE.LineDashedMaterial({ ...opts, dashSize: 0.7, gapSize: 0.9 }) : new THREE.LineBasicMaterial(opts));
+    if (dashed) lines.computeLineDistances();
+    lines.renderOrder = ORDER.stream;
+    group.add(lines);
   };
+  lineLayer(false);
+  lineLayer(true);
+  // One faint mote rises along each stream, out of phase with the others.
+  streams.forEach((st, i) => motes.push({ a: st.a, b: st.b, off: new THREE.Vector3(), phase: (i * 0.37) % 1, rate: 0.1, color: st.color, level: Math.min(1, 0.2 + 1.6 * st.level) }));
 
+  const mpos = new Float32Array(motes.length * 3);
+  const mcol = new Float32Array(motes.length * 3);
+  const mgeo = new THREE.BufferGeometry();
+  mgeo.setAttribute('position', new THREE.BufferAttribute(mpos, 3));
+  mgeo.setAttribute('color', new THREE.BufferAttribute(mcol, 3));
+  const moteLayer = new THREE.Points(mgeo, new THREE.PointsMaterial({ vertexColors: true, size: 0.45, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  moteLayer.frustumCulled = false; // positions move after the first bounds pass
+  moteLayer.renderOrder = ORDER.mote;
+  group.add(moteLayer);
+
+  const tmp = new THREE.Vector3();
+  // Own clock that stands still under reduced motion and resumes without a jump.
+  let time = 0;
+  let last = 0;
+  const animate = (t: number, active: string | null, reduced: boolean) => {
+    if (!reduced) time += Math.min(0.1, Math.max(0, t - last));
+    last = t;
+    motes.forEach((m, i) => {
+      const k = (time * m.rate + m.phase) % 1;
+      tmp.lerpVectors(m.a, m.b, k).add(m.off);
+      mpos.set([tmp.x, tmp.y, tmp.z], i * 3);
+      // Fade in and out so a mote never pops: it is felt, not counted.
+      const e = Math.sin(Math.PI * k) * m.level;
+      mcol.set([m.color.r * e, m.color.g * e, m.color.b * e], i * 3);
+    });
+    mgeo.attributes.position.needsUpdate = true;
+    mgeo.attributes.color.needsUpdate = true;
+    for (const h of hazes) h.mat.opacity = h.base * (0.85 + 0.15 * Math.sin(time * 0.7 + h.i * 2));
+    linkParticles(time, active);
+    refParticles(time, active);
+  };
 
   /** Land on the mini globe: the globe view's own land layer, scaled down. */
   const setLand = (features: Feature<Geometry>[]) => {

@@ -27,6 +27,10 @@ import { geoCentroid, geoContains } from 'd3-geo';
 
 const GHOST_R = DOME_R * GHOST_SHELL;
 const MAX_STEP = Math.cos((12 * Math.PI) / 180);
+/** How it works turns once per 60 / this seconds (OrbitControls: 2π/60 rad per unit per second). */
+const SYSTEM_SPIN = 0.4; // one turn per 150 s
+const GRAPH_SPIN = 0.3;
+const SPIN_IDLE_MS = 4000;
 
 /** True borders on the same rotated globe, as line segments just inside the skin. */
 function borderSegments(geometry: Geometry, out: number[]) {
@@ -226,6 +230,14 @@ export class GraphScene {
   private frame = 0;
   private clock = new THREE.Clock();
   private downAt = { x: 0, y: 0 };
+  // The How it works stack turns by the camera's own auto-rotate (so labels and
+  // picking stay attached): paused while pressed, hovering or selected, and for
+  // SPIN_IDLE_MS after the last touch; never under reduced motion. `matches` is
+  // live, so a change of the preference applies at once.
+  private pressed = false;
+  private touchedAt = 0;
+  private lastTick = 0;
+  private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   private graph: Graph;
   private container: HTMLElement;
   private cb: SceneCallbacks;
@@ -246,13 +258,15 @@ export class GraphScene {
     this.setCamera(HOMES.graph);
     this.controls.enableDamping = true;
     this.controls.autoRotate = true;
-    this.controls.autoRotateSpeed = 0.3;
+    this.controls.autoRotateSpeed = GRAPH_SPIN;
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = 260;
     this.controls.addEventListener('start', () => {
       this.controls.autoRotate = false;
       this.atHome = false;
+      this.touchedAt = performance.now();
     });
+    this.controls.addEventListener('end', () => (this.touchedAt = performance.now())); // wheel zoom has no pointer events
 
     this.scene.background = new THREE.Color('#101010');
     this.scene.fog = new THREE.FogExp2('#101010', 0.003);
@@ -310,6 +324,8 @@ export class GraphScene {
     el.addEventListener('pointermove', this.onPointerMove);
     el.addEventListener('pointerdown', this.onPointerDown);
     el.addEventListener('pointerup', this.onPointerUp);
+    el.addEventListener('pointercancel', this.onPointerRelease);
+    el.addEventListener('pointerleave', this.onPointerLeave);
     window.addEventListener('resize', this.onResize);
     this.loop();
   }
@@ -1173,6 +1189,7 @@ export class GraphScene {
   setView(view: View) {
     if (view === this.view) return;
     this.view = view;
+    this.controls.autoRotateSpeed = view === 'system' ? SYSTEM_SPIN : GRAPH_SPIN;
     const from = new Map([...this.views.values()].map((v) => [v.key, { ...v.base }]));
     this.morph = { from, t0: performance.now(), ms: 2200 };
     this.showViewDecor();
@@ -1239,6 +1256,7 @@ export class GraphScene {
     const key = this.pick(ev);
     if (key !== this.hovered) {
       this.hovered = key;
+      this.touchedAt = performance.now();
       this.renderer.domElement.style.cursor = key ? 'pointer' : 'grab';
     }
     this.cb.onHover(key, ev.clientX, ev.clientY);
@@ -1246,9 +1264,25 @@ export class GraphScene {
 
   private onPointerDown = (ev: PointerEvent) => {
     this.downAt = { x: ev.clientX, y: ev.clientY };
+    this.pressed = true;
+  };
+
+  /** Pointer up or a cancelled touch: the idle clock for the spin starts here. */
+  private onPointerRelease = () => {
+    this.pressed = false;
+    this.touchedAt = performance.now();
+  };
+
+  /** A finger lifting or the mouse leaving the canvas: nothing is hovered any more. */
+  private onPointerLeave = (ev: PointerEvent) => {
+    if (!this.hovered) return;
+    this.hovered = null;
+    this.touchedAt = performance.now();
+    this.cb.onHover(null, ev.clientX, ev.clientY);
   };
 
   private onPointerUp = (ev: PointerEvent) => {
+    this.onPointerRelease();
     if (Math.hypot(ev.clientX - this.downAt.x, ev.clientY - this.downAt.y) > 5) return; // a drag, not a click
     this.cb.onSelect(this.pick(ev));
   };
@@ -1303,7 +1337,10 @@ export class GraphScene {
       }
     }
     if (this.morph) this.stepMorph();
-    if (this.system.group.visible) this.system.animate(t);
+    if (this.system.group.visible) {
+      const key = this.hovered ?? this.selected;
+      this.system.animate(t, key, this.reduced.matches);
+    }
     if (this.live.group.visible) this.live.tick(t, this.camera.position);
     const fade = this.articles.group.visible ? this.articles.update(this.camera) : null;
     this.spotlight(t);
@@ -1327,7 +1364,12 @@ export class GraphScene {
         b.outline.scale.set(b.size, b.height, b.size).multiplyScalar(1.04 * (1.05 + 0.15 * Math.sin(t * 3)));
         b.outline.material.opacity = 0.65 + 0.35 * Math.sin(t * 3);
       }
-    this.controls.update();
+    // One mechanism for the spin: the camera's auto-rotate, time-based here.
+    const dt = Math.min(0.1, t - this.lastTick);
+    this.lastTick = t;
+    if (this.view === 'system')
+      this.controls.autoRotate = !this.reduced.matches && !this.flight && !this.pressed && !this.hovered && !this.selected && performance.now() - this.touchedAt > SPIN_IDLE_MS;
+    this.controls.update(this.view === 'system' ? dt : undefined);
     const { clientWidth: w, clientHeight: h } = this.container;
     // Labels anchor to the interior entity shells, not the geographic surface.
     // Hide the entire label layer outside, including selections and live labels.
@@ -1347,6 +1389,8 @@ export class GraphScene {
     el.removeEventListener('pointermove', this.onPointerMove);
     el.removeEventListener('pointerdown', this.onPointerDown);
     el.removeEventListener('pointerup', this.onPointerUp);
+    el.removeEventListener('pointercancel', this.onPointerRelease);
+    el.removeEventListener('pointerleave', this.onPointerLeave);
     window.removeEventListener('resize', this.onResize);
     this.controls.dispose();
     this.bloom.dispose();
