@@ -59,7 +59,7 @@ function hover(op: string, hq: [number, number]): [number, number] {
 }
 
 /** Small stable hash, so a city keeps its jitter across polls. */
-function hash(s: string): number {
+export function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return (h >>> 0) / 4294967296;
@@ -166,12 +166,15 @@ export class LiveLayer {
   private targets = new Map<string, Target>();
   /** Entities agents fetched -> the colour their box lights up in; the first bot listed decides. */
   readonly entityHits = new Map<string, string>();
+  /** Soft markers on the skin above each fetched entity, shown only from outside the dome. */
+  private pins: THREE.Sprite[] = [];
+  private pinGroup = new THREE.Group();
 
   private labels: Labels;
 
   constructor(labels: Labels) {
     this.labels = labels;
-    this.group.add(this.readerGroup);
+    this.group.add(this.readerGroup, this.pinGroup);
   }
 
   set(data: LiveBySite | null, ctx: LiveContext) {
@@ -191,7 +194,10 @@ export class LiveLayer {
         const color = TIER_COLORS[tierOf(b.bot)];
         if (at) sat.targets.push({ at, fresh: 1 - (0.7 * Math.min(b.seconds_ago, WINDOW_S)) / WINDOW_S });
         if (at && b.kind === 'post') this.mark(`${site}:${b.post}`, at, color, ctx.name({ site, post: b.post }));
-        if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) this.entityHits.set(b.entity!, color);
+        if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) {
+          this.entityHits.set(b.entity!, color);
+          this.pin(b.entity!, at, color);
+        }
       }
     }
     this.drawDots();
@@ -202,6 +208,18 @@ export class LiveLayer {
       s.tethers.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
       s.tethers.visible = !!s.origin;
     }
+  }
+
+  /** From outside the dome the entity itself is out of sight: a faint pulse on the skin above it says a bot was there. */
+  private pin(key: string, at: THREE.Vector3, color: string) {
+    if (at.lengthSq() < 1e-6) return;
+    // Normal blending and a dimmed colour: pins stay under the bloom threshold.
+    const pin = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color, transparent: true, depthWrite: false, opacity: 0.35 }));
+    pin.position.copy(at).setLength(DOME_R * 1.012);
+    pin.scale.setScalar(1.3);
+    pin.userData.phase = hash(key) * Math.PI * 2;
+    this.pinGroup.add(pin);
+    this.pins.push(pin);
   }
 
   private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext) {
@@ -344,8 +362,16 @@ export class LiveLayer {
     }
   }
 
-  /** Hover, beams and pulses; call every frame. */
-  tick(t: number) {
+  /** Hover, beams and pulses; call every frame. `eye` is the camera: pins show only outside the dome, on its near side. */
+  tick(t: number, eye: THREE.Vector3) {
+    const outside = eye.length() > DOME_R;
+    this.pinGroup.visible = outside;
+    if (outside)
+      for (const pin of this.pins) {
+        pin.visible = pin.position.dot(eye) > DOME_R * DOME_R; // near hemisphere only
+        pin.material.opacity = 0.35 + 0.1 * Math.sin(t * 2.4 + pin.userData.phase);
+        pin.scale.setScalar(1.3 * (1 + 0.15 * Math.sin(t * 2.4 + pin.userData.phase)));
+      }
     for (const dot of this.dots) dot.material.opacity = 0.8 + 0.2 * Math.sin(t * 2.2 + dot.userData.phase);
     // Target rings breathe outward and fade, like a ping.
     for (const ring of this.rings) {
@@ -393,6 +419,11 @@ export class LiveLayer {
       this.group.remove(ring);
       ring.material.dispose();
     }
+    for (const pin of this.pins) {
+      this.pinGroup.remove(pin);
+      pin.material.dispose();
+    }
+    this.pins = [];
     for (const key of this.targets.keys()) this.labels.set(`live-target:${key}`, null, { x: 0, y: 0, z: 0 }, 0);
     this.rings = [];
     this.targets.clear();

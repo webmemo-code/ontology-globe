@@ -1,16 +1,39 @@
 // Pure data helpers: per-site stats, layout positions, co-occurrence.
 import type { Graph, GraphNode, GraphPost, Perf, SiteMode, SiteStats, Status } from './types';
+import { TOPIC_FAMILIES } from './topicWheel';
 
 export const PERF_RANK: Record<Perf, number> = { top10: 4, top25: 3, active: 2, seen: 1, none: 0 };
 const STATUS_RANK: Record<Status, number> = { hub: 3, covered: 2, thin: 1, orphan: 0 };
 
+// Spotlight palette (#27): warm hues around the house orange, no green, no blue
+// (blues belong to AI agents). Colour means focus: entities show it only in the
+// spotlight, when selected or while being visited; otherwise they are GHOST grey.
 export const CLASS_COLORS: Record<string, string> = {
-  places: '#29B6F6',
-  topics: '#FF8F00',
-  organizations: '#66BB6A',
-  trips: '#BA68C8',
-  people: '#FFD54F',
+  places: '#FF9000',
+  topics: '#A07BE6',
+  organizations: '#EC6A8E',
+  trips: '#E9C46A',
+  people: '#F3E7D3',
 };
+
+/** Unlit entities: house grey. */
+export const GHOST_COLOR = '#989898';
+
+// Places shade by level: continents deep orange, sights pale apricot.
+const PLACE_RAMP = ['#D96F00', '#FF9000', '#FFA940', '#FFC37A', '#FFD9A8'];
+// Topics shade by wheel family: violet through orchid to plum.
+const FAMILY_RAMP = ['#7F64D9', '#9070E3', '#A07BE6', '#B07FE0', '#C283D8', '#CF86CC', '#B86FB8', '#9C5FA8'];
+const FAMILY_OF = new Map<string, number>(TOPIC_FAMILIES.flatMap((f, i) => f.topics.map((t) => [`topics/${t}`, i] as const)));
+
+/** Full spotlight colour of one entity: its class hue, shaded by place level or topic family. */
+export function entityColor(node: GraphNode): string {
+  if (node.class === 'places') return PLACE_RAMP[Math.min(node.depth, PLACE_RAMP.length - 1)];
+  if (node.class === 'topics') {
+    const f = FAMILY_OF.get(node.key);
+    return f === undefined ? '#B5A6CF' : FAMILY_RAMP[f % FAMILY_RAMP.length];
+  }
+  return CLASS_COLORS[node.class] ?? GHOST_COLOR;
+}
 
 export const CLASS_NAMES: Record<string, string> = {
   places: 'Places',
