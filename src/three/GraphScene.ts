@@ -1385,7 +1385,7 @@ function articleDisc(r0: number, r1: number, max: number, detail: { value: numbe
         float lg = log( v ) / log( 10.0 );
         float decade = fract( lg );                      // 0 at 1, 10, 100 ... rising to the next
         float step = fract( v / pow( 10.0, floor( lg ) ) ); // 0 at each 1, 2, 3 ... of the decade
-        float a = ( 0.03 + 0.09 * t ) * ( 0.25 + 0.45 * decade + 0.3 * step );
+        float a = ( 0.008 + 0.026 * t ) * ( 0.25 + 0.45 * decade + 0.3 * step );
         gl_FragColor = vec4( uColor, a * mix( 0.15, 1.0, uDetail ) );
       }`,
     transparent: true,
