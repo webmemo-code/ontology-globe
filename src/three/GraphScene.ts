@@ -183,7 +183,6 @@ export class GraphScene {
   private lastLabels = 0;
   private narrow = false;
   private labelOn = new Set<string>();
-  private labelCands: NodeView[] = [];
   private linkLines!: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   private tubes: { mesh: THREE.Mesh<THREE.TubeGeometry, THREE.MeshBasicMaterial>; key: string }[] = [];
   private fwd = new THREE.Vector3();
@@ -880,7 +879,8 @@ export class GraphScene {
       let target = 0;
       if (v.hold) target = v.hold > 0 ? 1 : 0;
       else if (inside) {
-        const d = this.tmp.set(v.base.x - eye.x, v.base.y - eye.y, v.base.z - eye.z);
+        // Aim at the rendered centre: a topic stands lift units above its wheel point.
+        const d = this.tmp.set(v.base.x - eye.x, v.base.y + v.lift - eye.y, v.base.z - eye.z);
         const len = d.length();
         target = len < 1e-3 ? 1 : THREE.MathUtils.smoothstep(d.dot(this.fwd) / len, cosOut, cosIn);
       }
@@ -905,22 +905,19 @@ export class GraphScene {
     }
   }
 
-  /** Whisper: only lit entities (or the selection, its neighbours, search hits) keep a label, capped by priority. */
+  /**
+   * Whisper: only lit entities (or the selection, its neighbours, search hits) may
+   * carry a label. The 8 / 5 budget is spent in Labels.update, on labels that pass its
+   * distance, viewport and overlap checks, so a rejected label never takes a slot.
+   */
   private refreshLabels() {
     this.labelOn.clear();
     if (this.view !== 'graph') return;
-    const cands = this.labelCands;
-    cands.length = 0;
-    for (const v of this.views.values()) if (v.labelled && (v.hold > 0 || v.spot > LABEL_SPOT)) cands.push(v);
-    cands.sort((a, b) => b.labelPriority - a.labelPriority);
-    const cap = this.narrow ? 5 : 8;
-    let n = 0;
-    for (const v of cands) {
-      if (v.hold <= 0 && n >= cap) continue; // overrides are never dropped
-      this.labelOn.add(v.key);
-      n++;
-    }
+    for (const v of this.views.values()) if (v.labelled && (v.hold > 0 || v.spot > LABEL_SPOT)) this.labelOn.add(v.key);
   }
+
+  /** Labels.update budget: spotlight labels count towards the cap; overrides (hold) and non-entity labels never do. */
+  private budgeted = (key: string) => this.view === 'graph' && (this.views.get(key)?.hold ?? 1) <= 0;
 
   /** Labels.update hook: in the globe view an entity label shows only while it is in labelOn. */
   private hideLabel = (key: string) => this.view === 'graph' && this.views.has(key) && !this.labelOn.has(key);
@@ -1336,7 +1333,7 @@ export class GraphScene {
     // Hide the entire label layer outside, including selections and live labels.
     const outside = this.view === 'graph' && this.camera.position.length() > DOME_R;
     this.labels.group.visible = !outside;
-    if (!outside) this.labels.update(this.camera, w, h, this.view, this.hideLabel, fade, this.view === 'graph' ? THREE.MathUtils.lerp(0.62, 1, this.globeDetail.value) : 1);
+    if (!outside) this.labels.update(this.camera, w, h, this.view, this.hideLabel, fade, this.view === 'graph' ? THREE.MathUtils.lerp(0.62, 1, this.globeDetail.value) : 1, { counts: this.budgeted, max: this.narrow ? 5 : 8 });
     this.bloom.composer.render();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
