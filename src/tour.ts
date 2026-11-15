@@ -56,9 +56,9 @@ export const TOUR: TourStop[] = [
   },
   {
     title: 'Every theme starts with the two of us',
-    text: 'At the hub of the wheel stand the two authors who write both blogs. Every article is signed by one of us, with the same identity on both sites.',
-    // Low between the towers, looking in at the hub.
-    camera: cam([9, 3.5, 13], [0, 4, 0]),
+    text: 'Just below the hub of the wheel are the two authors who write both blogs. Every article is signed by one of us, with the same identity on both sites.',
+    // Just under the wheel's rim, looking in at the faces beneath the hub.
+    camera: cam([10, -1.5, 14], [0, -3.2, 0]),
   },
   {
     title: 'Companies hang over their headquarters',
