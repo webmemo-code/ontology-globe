@@ -257,8 +257,13 @@ export class GraphScene {
     const sun = new THREE.DirectionalLight('#ffffff', 1.0);
     sun.position.set(40, 80, 30);
     this.scene.add(sun);
+    // A second light below the horizon: seen from slightly above, the cylinder walls
+    // catch its reflection too, not only when looking up from underneath.
+    const under = new THREE.DirectionalLight('#ffffff', 1.3);
+    under.position.set(-40, -14, -28); // ~16 deg below: mirrors a camera ~16 deg above
+    this.scene.add(under);
 
-    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 1.15, radius: 0.65, threshold: 0.62 });
+    this.bloom = createBloomComposer(this.renderer, this.scene, this.camera, { strength: 1.3, radius: 0.65, threshold: 0.62 });
     this.bloom.updateSize(w, h);
 
     this.tree = placeTree(graph);
@@ -663,7 +668,9 @@ export class GraphScene {
   private styleBox(b: Box, node: GraphNode, s: SiteStats | null, dim: boolean, maxSize: number) {
     const present = !!s;
     const orphan = !s || s.status === 'orphan';
-    b.size = present ? Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize) : 0.5;
+    // Topics crowd the small wheel in the middle: a slimmer scale so they barely overlap.
+    const topic = node.class === 'topics' && this.view === 'graph';
+    b.size = !present ? 0.5 : topic ? Math.min(0.5 + 0.17 * Math.sqrt(s!.posts), 2) : Math.min(0.7 + 0.32 * Math.sqrt(s!.posts), maxSize);
     // Height is the AI fetch weight alone (log scale 0..1, never a count), on
     // its own scale (0.4..5 units), so a big
     // topic is not tall just for being big; no fetches = a flat disc.
