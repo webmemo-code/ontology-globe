@@ -1,20 +1,23 @@
 // Scene 1, "the stack": how one ontology becomes everything the sites
 // publish. A mini globe on the bottom floor (the globe view's shell, land and
 // coast, scaled down) stands for the ontology; this module builds the floors
-// above it, the soft haze the blogs draw from it, and the quiet streams that
-// pulse upward from level to level.
+// above it, the soft haze the blogs draw from it, the quiet streams that pulse
+// upward from the blogs to the outputs, and the readers' beams back down.
 //
 // Heights and sizes carry data from public/system.json: an output box is as
-// tall as the log of how many items it serves, and a reader sphere is as big
-// as its (log-scaled, relative) monthly volume. Without that file the scene
+// tall as the log of how many items it serves, and a reader (an AI satellite
+// or the travelers' dots) is as big as its (log-scaled, relative) monthly volume. Without that file the scene
 // falls back to even sizes.
 //
-// Glass: the cylinders and spheres are see-through and do not write depth, so
-// whatever stands behind them reads at every angle; their rims carry the form.
+// Glass: the cylinders are see-through and do not write depth, so
+// whatever stands behind them reads at every angle; their rims carry the form. Readers use the globe
+// view's live-layer look: wireframe satellites, solid orange dots.
 import * as THREE from 'three';
 import type { Feature, Geometry } from 'geojson';
 import { buildLand } from './land';
 import { logoTexture } from './logo';
+import { flowingDash } from './flowingDash';
+import { TIER_COLORS } from './live';
 import type { Vec3 } from '../data/model';
 import type { Graph, SystemNumbers } from '../data/types';
 
@@ -26,7 +29,7 @@ const TOWER_Y = 4;
 const OUTPUT_Y = 22;
 const CONSUMER_Y = 38;
 // Draw order: haze and streams first, then the glass (sorted back to front by
-// distance within one renderOrder), then rims, then the motes on top.
+// distance within one renderOrder), then rims (and the satellites), then the motes on top.
 const ORDER = { haze: 1, stream: 2, glass: 3, rim: 4, mote: 5 };
 /** Weight for a reader with no number in system.json: neutral, never zero. */
 const NEUTRAL_WEIGHT = 0.5;
@@ -148,9 +151,9 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   const group = new THREE.Group();
   const labels: { text: string; pos: Vec3; color: string; px: number; priority: number }[] = [];
   const pickables: THREE.Mesh[] = [];
-  // Upward streams (level to level): a thin line and one faint mote that
+  // Upward streams (blogs to outputs): a thin line and one faint mote that
   // rises along it. `level` is the stream's brightness, 0..1.
-  const streams: { a: THREE.Vector3; b: THREE.Vector3; level: number; color: THREE.Color; dashed: boolean }[] = [];
+  const streams: { a: THREE.Vector3; b: THREE.Vector3; level: number; color: THREE.Color }[] = [];
   const maxPosts = Math.max(...graph.sites.map((x) => x.posts), 1);
   const v = (p: Vec3) => new THREE.Vector3(p.x, p.y, p.z);
   const fade = fadeTexture();
@@ -288,7 +291,7 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
   towers.forEach((t, i) => {
     const heft = (graph.sites[i]?.posts ?? 0) / maxPosts;
     const color = new THREE.Color(i === 0 ? '#FF9000' : '#989898');
-    for (const o of outTops) streams.push({ a: t, b: o.clone().setY(OUTPUT_Y), level: 0.25 + 0.35 * heft, color, dashed: false });
+    for (const o of outTops) streams.push({ a: t, b: o.clone().setY(OUTPUT_Y), level: 0.25 + 0.35 * heft, color });
   });
   // What points to what: static arcs over the floor within one level (not data
   // moving between levels, so not part of the upward flow). Their particles
@@ -317,57 +320,96 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     );
   const linkParticles = arcParticles(group, arcs, links, 6, '#FFE0B2', 0.5, 0.3);
 
-  // Who reads it: sphere size = relative monthly volume (log-scaled upstream).
-  const consumers: [string, string, string, string[]][] = [
-    ['sys:google', 'Google Search', 'google', ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy']],
-    ['sys:ai-training', 'AI training', 'ai-training', ['sys:html', 'sys:llmstxt', 'sys:okf', 'sys:entitymap']],
-    ['sys:ai-search', 'AI search', 'ai-search', ['sys:html', 'sys:jsonld', 'sys:entitymap', 'sys:llmstxt', 'sys:okf']],
-    ['sys:assistants', 'AI assistants', 'assistants', ['sys:html', 'sys:entitymap', 'sys:llmstxt', 'sys:okf']],
-    ['sys:travelers', 'Travelers', 'travelers', ['sys:html', 'sys:photos', 'sys:taxonomy']],
+  // Who reads it, in the globe view's live-layer language: AI readers are
+  // wireframe satellites in their tier colour, travelers a few solid orange
+  // dots; size = relative monthly volume (log-scaled upstream).
+  type Reader = { key: string; title: string; field: string; from: string[]; tier: string | null };
+  const consumers: Reader[] = [
+    { key: 'sys:google', title: 'Google Search', field: 'google', tier: TIER_COLORS.search, from: ['sys:html', 'sys:photos', 'sys:jsonld', 'sys:taxonomy'] },
+    { key: 'sys:ai-training', title: 'AI training', field: 'ai-training', tier: TIER_COLORS.training, from: ['sys:html', 'sys:llmstxt', 'sys:okf', 'sys:entitymap'] },
+    { key: 'sys:ai-search', title: 'AI search', field: 'ai-search', tier: TIER_COLORS.search, from: ['sys:html', 'sys:jsonld', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
+    { key: 'sys:assistants', title: 'AI assistants', field: 'assistants', tier: TIER_COLORS.user, from: ['sys:html', 'sys:entitymap', 'sys:llmstxt', 'sys:okf'] },
+    { key: 'sys:travelers', title: 'Travelers', field: 'travelers', tier: null, from: ['sys:html', 'sys:photos', 'sys:taxonomy'] },
   ];
-  const spheres = new Map<string, THREE.Vector3>();
+  const readerAt = new Map<string, THREE.Vector3>();
+  const tumblers: THREE.Mesh[] = [];
+  const beamShifts: { value: number }[] = [];
+  const READER_DOT = new THREE.Color('#FF9000').multiplyScalar(0.78); // dimmed like the live dots: crisp, no bloom
   // Readers sit on a circle above the outputs. Every order of readers around
   // it, at every turn of the circle, is tried (5! x 360 is nothing), and the
   // one with the shortest total beams down to the outputs each reader reads
   // wins, so a reader hangs over what it reads.
   const slots = placeOnCircle(
-    consumers.map(([, , , from]) => from.map((k) => base.get(k)!)),
+    consumers.map(({ from }) => from.map((k) => base.get(k)!)),
     CONSUMER_RADIUS,
   );
-  consumers.forEach(([key, title, field, from], i) => {
+  consumers.forEach(({ key, title, field, from, tier }, i) => {
     const given = numbers?.consumers[field];
     const w = given ?? NEUTRAL_WEIGHT;
-    const size = 1 + 2.6 * w;
-    const at = { x: slots[i].x, y: CONSUMER_Y, z: slots[i].z };
-    const mesh = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(size, 1),
-      new THREE.MeshStandardMaterial({ color: '#4C96F2', emissive: '#4C96F2', emissiveIntensity: 0.4, roughness: 0.3, metalness: 0.1, flatShading: true, transparent: true, opacity: 0.42, depthWrite: false }),
-    );
-    mesh.position.set(at.x, at.y + size, at.z);
-    mesh.userData.key = key;
-    mesh.renderOrder = ORDER.glass;
-    // Facet edges as the rim: the glass itself is faint.
-    const rim = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 1), new THREE.LineBasicMaterial({ color: '#8FBEFF', transparent: true, opacity: 0.4, depthWrite: false }));
-    rim.position.copy(mesh.position);
-    rim.renderOrder = ORDER.rim;
-    group.add(mesh, rim);
-    pickables.push(mesh);
-    // Labels sit outward of their sphere, so two spheres in line of sight keep both names.
-    labels.push({ text: title, pos: { x: at.x * 1.3, y: at.y + 2 * size + 1.2, z: at.z * 1.3 }, color: '#ffffff', px: 12, priority: 4000 });
-    // Stage 2, outputs -> readers. The streams are illustrative: there is no
-    // measured reader x output matrix, so the reader's own weight is its total,
-    // split over its streams (more connections do not make it heavier). The
-    // motes lean orange or grey by Travelmemo's share of the reader.
-    const mix = new THREE.Color('#989898').lerp(new THREE.Color('#FF9000'), numbers?.share?.[field] ?? 0.5);
-    for (const k of from)
-      streams.push({ a: outTops[outputs.findIndex(([key]) => key === k)], b: v(at), level: w / from.length, color: mix, dashed: given === undefined });
-    spheres.set(key, mesh.position.clone());
+    const size = 1.4 + 2.4 * w; // satellite radius / traveler cluster radius
+    const centre = new THREE.Vector3(slots[i].x, CONSUMER_Y + 3, slots[i].z);
+    // Invisible pick proxy: wireframes and tiny dots are hard to hit.
+    const proxy = new THREE.Mesh(new THREE.SphereGeometry(size + 0.8, 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+    proxy.position.copy(centre);
+    proxy.userData.key = key;
+    proxy.renderOrder = ORDER.glass;
+    group.add(proxy);
+    pickables.push(proxy);
+    if (tier) {
+      const sat = new THREE.Mesh(new THREE.OctahedronGeometry(size), new THREE.MeshBasicMaterial({ color: tier, wireframe: true }));
+      sat.position.copy(centre);
+      sat.renderOrder = ORDER.rim;
+      sat.rotation.set(i, i * 2, 0);
+      group.add(sat);
+      tumblers.push(sat);
+    } else {
+      // Small solid cores, more of them for more readers.
+      const n = 4 + Math.round(8 * w);
+      const dot = new THREE.SphereGeometry(0.28, 10, 8);
+      const mat = new THREE.MeshBasicMaterial({ color: READER_DOT });
+      for (let j = 0; j < n; j++) {
+        const m = new THREE.Mesh(dot, mat);
+        const rad = size * 0.8 * Math.sqrt((j + 0.5) / n);
+        const ang = j * 2.4;
+        m.position.set(centre.x + Math.cos(ang) * rad, centre.y + (((j * 5) % 7) / 3 - 1) * size * 0.4, centre.z + Math.sin(ang) * rad);
+        m.renderOrder = ORDER.rim;
+        group.add(m);
+      }
+    }
+    // Labels sit outward of their reader, so two in line of sight keep both names.
+    labels.push({ text: title, pos: { x: centre.x * 1.3, y: centre.y + size + 1.2, z: centre.z * 1.3 }, color: '#ffffff', px: 12, priority: 4000 });
+    // Stage 2, readers -> outputs: beams DOWN onto the top of each cylinder the
+    // reader reads. Illustrative: there is no measured reader x output matrix,
+    // so the reader's own weight is its total, split over its beams. A reader
+    // with no weight draws at a fixed, fainter level.
+    const level = w / from.length;
+    const opacity = given === undefined ? 0.25 : Math.min(1, 0.4 + 2.4 * level);
+    const pos: number[] = [];
+    for (const k of from) {
+      const top = outTops[outputs.findIndex(([ok]) => ok === k)];
+      pos.push(centre.x, centre.y - size, centre.z, top.x, top.y, top.z);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    let beams: THREE.LineSegments;
+    if (tier) {
+      const { mat, shift } = flowingDash({ color: tier, dashSize: 0.8, gapSize: 0.8, transparent: true, opacity, depthWrite: false });
+      beams = new THREE.LineSegments(geo, mat);
+      beams.computeLineDistances();
+      beamShifts.push(shift);
+    } else {
+      beams = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: READER_DOT, transparent: true, opacity, depthWrite: false }));
+    }
+    beams.frustumCulled = false;
+    beams.renderOrder = ORDER.stream;
+    group.add(beams);
+    readerAt.set(key, centre);
   });
   // Many travelers arrive through a search engine or an AI answer, not
   // directly: blue arcs from those readers over to the travelers.
   const referrals = ['sys:google', 'sys:ai-search', 'sys:assistants'].map((from) => {
-    const a = spheres.get(from)!;
-    const b = spheres.get('sys:travelers')!;
+    const a = readerAt.get(from)!;
+    const b = readerAt.get('sys:travelers')!;
     const mid = a.clone().add(b).multiplyScalar(0.5);
     mid.y += 6 + a.distanceTo(b) * 0.12;
     return new THREE.QuadraticBezierCurve3(a, mid, b);
@@ -389,13 +431,11 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     0.25,
   );
 
-  // Stream lines: thin and dim. A reader with no weight in system.json draws dashed.
-  const lineLayer = (dashed: boolean) => {
-    const list = streams.filter((x) => x.dashed === dashed);
-    if (!list.length) return;
+  // Stage 1 stream lines (blogs -> outputs): thin and dim.
+  {
     const pos: number[] = [];
     const col: number[] = [];
-    for (const { a, b, level, color } of list) {
+    for (const { a, b, level, color } of streams) {
       const k = 0.1 + 0.55 * level;
       pos.push(a.x, a.y, a.z, b.x, b.y, b.z);
       col.push(color.r * k, color.g * k, color.b * k, color.r * k, color.g * k, color.b * k);
@@ -403,14 +443,10 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-    const opts = { vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false };
-    const lines = new THREE.LineSegments(geo, dashed ? new THREE.LineDashedMaterial({ ...opts, dashSize: 0.7, gapSize: 0.9 }) : new THREE.LineBasicMaterial(opts));
-    if (dashed) lines.computeLineDistances();
+    const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     lines.renderOrder = ORDER.stream;
     group.add(lines);
-  };
-  lineLayer(false);
-  lineLayer(true);
+  }
   // One faint mote rises along each stream, out of phase with the others.
   streams.forEach((st, i) => motes.push({ a: st.a, b: st.b, off: new THREE.Vector3(), phase: (i * 0.37) % 1, rate: 0.1, color: st.color, level: Math.min(1, 0.2 + 1.6 * st.level) }));
 
@@ -441,6 +477,9 @@ export function buildSystem(graph: Graph, numbers: SystemNumbers | null, globeRa
     });
     mgeo.attributes.position.needsUpdate = true;
     mgeo.attributes.color.needsUpdate = true;
+    // Satellites tumble as in the globe view; the beams' dashes flow down.
+    tumblers.forEach((m) => m.rotation.set(time * 0.7, time * 1.1, 0));
+    for (const sh of beamShifts) sh.value = -time * 4;
     for (const h of hazes) h.mat.opacity = h.base * (0.85 + 0.15 * Math.sin(time * 0.7 + h.i * 2));
     linkParticles(time, active);
     refParticles(time, active);

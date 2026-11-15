@@ -492,7 +492,7 @@ function Viewer({ graph }: { graph: Graph }) {
                 </p>
               </details>
             ) : (
-              <p>Blog box volume = articles · Output height = items served, width = AI retrievals · Sphere = monthly readers, relative · output heights and widths and spheres on a log scale</p>
+              <p>Blog box volume = articles · Output height = items served, width = AI retrievals · AI readers are satellites, travelers dots, both sized by monthly readers (relative) · dashed beams run down to what they read · output heights, widths and reader sizes on a log scale</p>
             )}
         </>
         <button className="linkish credits-link" onClick={() => setShowCredits(!showCredits)}>

@@ -28,6 +28,7 @@ import type { SiteKey } from '../data/types';
 import type { Vec3 } from '../data/model';
 import type { Labels } from './label';
 import { withDepthFade } from './depthFade';
+import { flowingDash } from './flowingDash';
 
 export const READER_COLOR = '#FF9000';
 // The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR sits
@@ -63,22 +64,6 @@ export function hash(s: string): number {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return (h >>> 0) / 4294967296;
-}
-
-/**
- * LineDashedMaterial whose dashes can travel: three.js has no dash offset for
- * it, so shift the line distance in the shader. Returns the shift uniform.
- */
-function flowingDash(params: THREE.LineDashedMaterialParameters) {
-  const mat = new THREE.LineDashedMaterial(params);
-  const shift = { value: 0 };
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uDashShift = shift;
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float uDashShift;')
-      .replace('mod( vLineDistance, totalSize )', 'mod( vLineDistance + uDashShift, totalSize )');
-  };
-  return { mat, shift };
 }
 
 export interface LiveContext {
