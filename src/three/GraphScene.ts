@@ -17,7 +17,7 @@ import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
 import { haloTexture, makeEmblem, makePortrait } from './portrait';
 import { DOME_R, domeDirection, domeLayout, orgsOverHeadquarters, postKey, topicsOverHotspots, type Headquarters } from '../data/globe';
-import { WHEEL_R, topicWheelLayout, wheelPoint } from '../data/topicWheel';
+import { WHEEL_MAX, WHEEL_R, WHEEL_R0, articleRadius, topicWheelLayout, wheelPoint } from '../data/topicWheel';
 import { footprints, liftByCountry, type Footprint } from '../data/footprint';
 import type { Atlas } from '../data/atlas';
 import { CLASS_COLORS, GHOST_COLOR, ancestorOfType, entityColor, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor, type PlaceTree, type Vec3 } from '../data/model';
@@ -436,8 +436,18 @@ export class GraphScene {
       this.wheel.add(new THREE.LineSegments(g, mat));
     };
     add(circle(R), 0.9);
-    add([...circle(5), ...circle((5 + WHEEL_R) / 2)], 0.32);
-    add(sectors.flatMap((s) => radial(s.from - 0.03, 3, R)), 0.55);
+    // The article scale as log paper: a ring per 1-9 of each decade, so rings crowd
+    // towards every decade's end; rings grow brighter towards the rim (more articles).
+    // Decade rings (1, 10, 100, 1000) are stronger and labelled.
+    const span = articleRadius(WHEEL_MAX) - WHEEL_R0;
+    for (let d = 1; d <= WHEEL_MAX; d *= 10)
+      for (let m = 1; m <= 9 && m * d <= WHEEL_MAX; m++) {
+        const r = articleRadius(m * d);
+        const t = (r - WHEEL_R0) / span;
+        add(circle(r), m === 1 ? 0.25 + 0.4 * t : 0.06 + 0.16 * t);
+        if (m === 1) this.labels.set(`wheel-scale:${d}`, d === WHEEL_MAX ? `${d} articles` : `${d}`, { ...wheelPoint(0, r), y: 0.3 }, 2400, { px: 10, color: '#9D9C9A', views: ['graph'] });
+      }
+    add(sectors.flatMap((s) => radial(s.from - 0.03, WHEEL_R0, R)), 0.55);
     const ticks: number[] = [];
     for (let i = 0; i < 96; i++) ticks.push(...radial((2 * Math.PI * i) / 96, R, R + (i % 4 === 0 ? 1.1 : 0.5)));
     add(ticks, 0.75);

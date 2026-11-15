@@ -1,10 +1,17 @@
 // Topics live on a level wheel in the middle of the globe: direction = family,
-// distance from the centre = how specific the topic is.
+// distance from the centre = articles, on one log scale for every family
+// (few near the hub, many towards the rim).
 import type { Graph } from './types';
 import type { Vec3 } from './model';
 
 /** Outer radius of the wheel; it fits inside the innermost place shell (22). */
 export const WHEEL_R = 18;
+/** The article scale: 0 articles at WHEEL_R0, WHEEL_MAX at WHEEL_R1, log10 in between. */
+export const WHEEL_R0 = 4;
+export const WHEEL_R1 = WHEEL_R - 1.5;
+export const WHEEL_MAX = 1000;
+export const articleRadius = (n: number) =>
+  WHEEL_R0 + (WHEEL_R1 - WHEEL_R0) * Math.min(1, Math.log10(1 + Math.max(0, n)) / Math.log10(1 + WHEEL_MAX));
 
 // Editorial first draft: the owner will correct this grouping.
 export const TOPIC_FAMILIES: { name: string; topics: string[] }[] = [
@@ -54,12 +61,9 @@ export function topicWheelLayout(graph: Graph): {
     const from = at;
     const to = at + width;
     sectors.push({ name: g.name, from, to, mid: (from + to) / 2 });
-    const sorted = [...g.keys].sort((a, b) => posts(b) - posts(a) || a.localeCompare(b));
-    const n = sorted.length;
-    sorted.forEach((k, i) => {
-      const r = 5 + (WHEEL_R - 6.5) * (n === 1 ? 0.35 : i / (n - 1));
-      pos.set(k, wheelPoint(from + width * ZIGZAG[i % ZIGZAG.length], r));
-    });
+    // Sorted by articles so the zigzag spreads neighbours on the scale apart in angle.
+    const sorted = [...g.keys].sort((a, b) => posts(a) - posts(b) || a.localeCompare(b));
+    sorted.forEach((k, i) => pos.set(k, wheelPoint(from + width * ZIGZAG[i % ZIGZAG.length], articleRadius(posts(k)))));
     at = to + GAP;
   }
   return { pos, sectors };
