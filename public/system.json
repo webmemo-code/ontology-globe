@@ -1,37 +1,43 @@
 {
  "schema": "ontology-cube/system@1",
- "as_of": "2026-10-27",
+ "as_of": "2026-11-22",
  "window_days": 30,
  "outputs": {
-  "html": 1176,
-  "jsonld": 1176,
-  "okf": 1176,
-  "images": 26779,
+  "html": 1186,
+  "jsonld": 1186,
+  "okf": 1186,
+  "images": 27065,
   "llms": 122,
-  "taxonomy": 223,
-  "entitymap": 223
+  "taxonomy": 224,
+  "entitymap": 224
  },
  "consumers": {
-  "google": 0.72,
-  "ai-training": 1.0,
-  "ai-search": 0.59,
-  "assistants": 0.56,
-  "travelers": 0.79
+  "google": 0.73,
+  "search": 0.74,
+  "ai-training": 0.96,
+  "ai-search": 1.0,
+  "assistants": 0.55,
+  "travelers": 0.86
  },
  "share_site": "travelmemo",
  "share": {
-  "google": 0.05,
-  "ai-training": 0.68,
-  "ai-search": 0.72,
-  "assistants": 0.13,
-  "travelers": 0.34
+  "google": 0.1,
+  "search": 0.1,
+  "ai-training": 0.46,
+  "ai-search": 0.99,
+  "assistants": 0.41,
+  "travelers": 0.46
+ },
+ "search_split": {
+  "google": 0.9,
+  "bing": 0.1
  },
  "retrievals": {
-  "html": 1.0,
-  "images": 0.99,
-  "okf": 0.84,
-  "llms": 0.65,
-  "entitymap": 0.43,
-  "taxonomy": 0.79
+  "html": 0.94,
+  "images": 1.0,
+  "okf": 0.72,
+  "llms": 0.43,
+  "entitymap": 0.33,
+  "taxonomy": 0.83
  }
 }
