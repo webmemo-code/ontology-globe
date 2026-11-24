@@ -12,6 +12,7 @@ import { ServedStrip } from './hud/ServedStrip';
 import { TopBar } from './hud/TopBar';
 import { demoHistory, liveStats, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
 import { useMedia } from './hud/useMedia';
+import { nextFollow, type Baseline } from './hud/follow';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode, SystemNumbers } from './data/types';
@@ -167,7 +168,8 @@ function Viewer({ graph }: { graph: Graph }) {
       sceneRef.current?.setLive(data);
     };
     load();
-    const id = setInterval(load, 60_000);
+    // 30 s, matching the feed's own snapshot life (webmemo-schema 1.22.8): live follow flies on each new row.
+    const id = setInterval(load, 30_000);
     return () => {
       stop = true;
       clearInterval(id);
@@ -240,6 +242,29 @@ function Viewer({ graph }: { graph: Graph }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveState, mode, posts, byKey, DETAILS]);
 
+  // Live follow (#44): after each poll, fly to the newest observed row's pair.
+  // The followed row is not a selection: selecting would pause following.
+  const [follow, setFollow] = useState(true);
+  const [followed, setFollowed] = useState<string | null>(null);
+  const baselineRef = useRef<Baseline | null>(null);
+  const followedRef = useRef<string | null>(null);
+  followedRef.current = followed;
+  useEffect(() => {
+    // A new blog filter or live switched off: start over, and leave a followed pair for home.
+    baselineRef.current = null;
+    if (followedRef.current) sceneRef.current?.resetView();
+    setFollowed(null);
+  }, [mode, live]);
+  useEffect(() => {
+    if (!liveState) return;
+    const { row, baseline } = nextFollow(baselineRef.current, reading.readers, reading.bots, Object.keys(liveState) as SiteKey[]);
+    baselineRef.current = baseline;
+    if (!row || !follow || tourStep !== null || selected) return;
+    if (sceneRef.current?.followPair(row.id)) setFollowed(row.id);
+    // Only a new snapshot triggers a flight; the other values are read as they are then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveState]);
+
   // Search: every query word must start a word of the name ("zer" finds Zermatt,
   // not SwitZERland; "park weggis" finds the Park Weggis article). Entities rank
   // a name that starts with the query first, then more articles.
@@ -273,6 +298,7 @@ function Viewer({ graph }: { graph: Graph }) {
     sceneRef.current?.setFilter(q ? new Set(hits.map((n) => n.key)) : null, hits[0]?.key ?? null);
   }, [hits, q]);
   const pickHit = (key: string, row?: string) => {
+    setFollowed(null);
     pairRef.current = row ?? null;
     // Another row with the same destination: selected stays put, so frame it here.
     if (row && key === selected && tourStep === null) {
@@ -442,8 +468,12 @@ function Viewer({ graph }: { graph: Graph }) {
     </>
   );
 
-  const readingPanel = <ReadingPanel rows={reading.readers} onPick={pickHit} />;
-  const agentsPanel = <AgentsPanel rows={reading.bots} count={stats.bots} onPick={pickHit} />;
+  const toggleFollow = () => {
+    setFollow(!follow);
+    setFollowed(null);
+  };
+  const readingPanel = <ReadingPanel rows={reading.readers} onPick={pickHit} active={followed} follow={follow} onFollow={toggleFollow} />;
+  const agentsPanel = <AgentsPanel rows={reading.bots} count={stats.bots} onPick={pickHit} active={followed} />;
 
   const legendEl = (
       <details className={`hud legend${mobile ? "" : " bottom-left"}`} open>

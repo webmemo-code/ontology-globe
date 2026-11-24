@@ -32,6 +32,8 @@ const MAX_STEP = Math.cos((12 * Math.PI) / 180);
 const SYSTEM_SPIN = 0.4; // one turn per 150 s
 const GRAPH_SPIN = 0.3;
 const SPIN_IDLE_MS = 4000;
+/** Live follow: between arrivals the camera circles the followed pair this fast (rad/s, ~1.1 deg/s). */
+const DRIFT_SPEED = 0.02;
 
 /** True borders on the same rotated globe, as line segments just inside the skin. */
 function borderSegments(geometry: Geometry, out: number[]) {
@@ -230,6 +232,8 @@ export class GraphScene {
   // SPIN_IDLE_MS after the last touch; never under reduced motion. `matches` is
   // live, so a change of the preference applies at once.
   private pressed = false;
+  /** Circling the followed pair (owner 'drift'); any flight, selection or touch ends it. */
+  private drifting = false;
   private touchedAt = 0;
   private lastTick = 0;
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -259,6 +263,7 @@ export class GraphScene {
     this.controls.addEventListener('start', () => {
       // The user takes the camera: any flight in progress ends here, settled as cancelled.
       this.cancelFlight();
+      this.drifting = false;
       this.controls.autoRotate = false;
       this.atHome = false;
       this.touchedAt = performance.now();
@@ -1044,10 +1049,12 @@ export class GraphScene {
    */
   select(key: string | null, fly = true, { pair, owner = 'select' }: { pair?: string; owner?: CameraOwner } = {}) {
     this.selected = key;
+    if (key) this.drifting = false;
     this.applyStyle();
     this.refreshFocus();
     if (!fly) return;
-    if (!key) return this.flyHome(1600, owner);
+    // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
+    if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
     if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
     const post = this.postsByKey.get(key);
@@ -1072,6 +1079,28 @@ export class GraphScene {
     void this.flyTo(frameInterior(at, tiles), 1800, owner);
   }
 
+  /**
+   * Live follow: fly to a reading-list row's origin -> destination pair as
+   * owner 'follow', then circle it slowly until something else moves the
+   * camera. False when the user is busy (pressing, touched in the last
+   * SPIN_IDLE_MS, a selection, the other view, a higher flight) or the row draws
+   * no curve. Reduced motion: a jump cut, no circling.
+   */
+  followPair(row: string): boolean {
+    // touchedAt starts at 0: only a real touch counts, not the first seconds after load.
+    const touched = this.touchedAt > 0 && performance.now() - this.touchedAt < SPIN_IDLE_MS;
+    if (this.view !== 'graph' || this.selected || this.pressed || touched) return false;
+    if (this.flight && outranks(this.flight.owner, 'follow')) return false;
+    const path = this.live.pathOf(row);
+    if (!path) return false;
+    const reduced = this.reduced.matches;
+    const shot = framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key;
+    void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
+      if (r === 'done' && !reduced) this.drifting = true;
+    });
+    return true;
+  }
+
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
   private frameTans() {
     const { clientWidth: w, clientHeight: h } = this.container;
@@ -1093,7 +1122,9 @@ export class GraphScene {
   flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select'): Promise<FlightResult> {
     if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('cancelled');
     this.cancelFlight();
+    this.drifting = false;
     this.controls.autoRotate = false;
+    if (to !== this.homes[this.view]) this.atHome = false;
     const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };
     return new Promise((done) => {
       this.flight = { from, to, t0: performance.now(), ms, owner, path: pathPolicy(from, to, this.view === 'graph'), done };
@@ -1350,6 +1381,11 @@ export class GraphScene {
     this.lastTick = t;
     if (this.view === 'system')
       this.controls.autoRotate = !this.reduced.matches && !this.flight && !this.pressed && !this.hovered && !this.selected && performance.now() - this.touchedAt > SPIN_IDLE_MS;
+    // Drift: turn the eye about the line from the globe centre through the
+    // target, so its distance from the centre never changes and it cannot dip
+    // into the globe; the pair stays in the middle of the frame.
+    if (this.drifting && !this.flight && this.view === 'graph' && this.controls.target.lengthSq() > 1)
+      this.camera.position.applyAxisAngle(this.tmp.copy(this.controls.target).normalize(), DRIFT_SPEED * dt);
     this.controls.update(this.view === 'system' ? dt : undefined);
     const { clientWidth: w, clientHeight: h } = this.container;
     // Labels anchor to the interior entity shells, not the geographic surface.

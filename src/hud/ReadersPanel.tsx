@@ -59,13 +59,32 @@ export function ReadersStrip({ total, split, ref }: { total: number; split: [num
 }
 
 /** Newest reader rows; each flies to the article. */
-export function ReadingPanel({ rows, onPick }: { rows: ReadingRow[]; onPick: (key: string, row?: string) => void }) {
+export function ReadingPanel({
+  rows,
+  onPick,
+  active,
+  follow,
+  onFollow,
+}: {
+  rows: ReadingRow[];
+  onPick: (key: string, row?: string) => void;
+  /** The row live follow is showing. */
+  active?: string | null;
+  /** Live follow on: the camera flies to each newly seen visitor, reader or bot. */
+  follow: boolean;
+  onFollow: () => void;
+}) {
+  const toggle = (
+    <button className={`follow-toggle${follow ? ' on' : ''}`} onClick={onFollow} aria-pressed={follow} title="Fly to each new visitor, reader or AI agent">
+      Follow
+    </button>
+  );
   return (
     <section className="hud panel reading" aria-label="Now reading">
-      <PanelHead dot="orange" label="Now reading" />
+      <PanelHead dot="orange" label="Now reading" right={toggle} />
       <ul className="rows">
         {rows.slice(0, 5).map((r) => (
-          <li key={r.id} className="flick">
+          <li key={r.id} className={r.id === active ? 'flick following' : 'flick'} aria-current={r.id === active || undefined}>
             <button onClick={() => r.pick && onPick(r.pick, r.id)} title={r.what}>
               <span className="who">{r.who}</span>
               <span className="what">→ {r.what}</span>
