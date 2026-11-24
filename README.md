@@ -70,6 +70,12 @@ served; the globe is framed between them.
   or entity it fetched. When the country is unknown it hovers over the
   operator's headquarters instead. Agents on article pages are not seen,
   because the page cache serves those without PHP.
+- **Follow** (in the Now reading header, on by default): the feed is checked
+  every 30 seconds, and the camera flies to each newly seen reader or agent so
+  their location and destination are both in view (just the destination when
+  the arc runs behind the globe), then circles it slowly until the next one.
+  Dragging, selecting or the tour takes over; clicking any row frames its pair
+  the same way.
 
 ## On a phone
 
