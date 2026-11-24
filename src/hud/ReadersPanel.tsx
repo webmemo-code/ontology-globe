@@ -59,14 +59,14 @@ export function ReadersStrip({ total, split, ref }: { total: number; split: [num
 }
 
 /** Newest reader rows; each flies to the article. */
-export function ReadingPanel({ rows, onPick }: { rows: ReadingRow[]; onPick: (key: string) => void }) {
+export function ReadingPanel({ rows, onPick }: { rows: ReadingRow[]; onPick: (key: string, row?: string) => void }) {
   return (
     <section className="hud panel reading" aria-label="Now reading">
       <PanelHead dot="orange" label="Now reading" />
       <ul className="rows">
         {rows.slice(0, 5).map((r) => (
           <li key={r.id} className="flick">
-            <button onClick={() => r.pick && onPick(r.pick)} title={r.what}>
+            <button onClick={() => r.pick && onPick(r.pick, r.id)} title={r.what}>
               <span className="who">{r.who}</span>
               <span className="what">→ {r.what}</span>
               <span className={`tag tag-reader${r.site === 'reisememo' ? ' de' : ''}`}>{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
