@@ -180,7 +180,7 @@ function Viewer({ graph }: { graph: Graph }) {
   const pairRef = useRef<string | null>(null);
   useEffect(() => {
     if (tourStep !== null) return;
-    sceneRef.current?.select(selected, true, pairRef.current ?? undefined);
+    sceneRef.current?.select(selected, true, { pair: pairRef.current ?? undefined });
     pairRef.current = null;
   }, [selected, tourStep]);
   useEffect(() => {
@@ -276,7 +276,7 @@ function Viewer({ graph }: { graph: Graph }) {
     pairRef.current = row ?? null;
     // Another row with the same destination: selected stays put, so frame it here.
     if (row && key === selected && tourStep === null) {
-      sceneRef.current?.select(key, true, row);
+      sceneRef.current?.select(key, true, { pair: row });
       pairRef.current = null;
     }
     setTourStep(null);
@@ -291,12 +291,13 @@ function Viewer({ graph }: { graph: Graph }) {
     const stopView = stop.view ?? 'graph';
     const changing = stopView !== viewRef.current;
     setView(stopView);
-    scene.setView(stopView);
+    scene.setView(stopView, 'tour');
     setSelected(stop.select ?? null);
     // A view change flies the camera itself; let it land before the stop's own move.
     const id = setTimeout(
       () => {
-        scene.select(stop.select ?? null, !stop.camera);
+        // Both kinds of stop fly as the tour, so a quick Next replaces either.
+        scene.select(stop.select ?? null, !stop.camera, { owner: 'tour' });
         if (stop.camera) void scene.flyTo(stop.camera, 2000, 'tour');
       },
       changing ? 2300 : 0,

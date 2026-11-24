@@ -1039,36 +1039,37 @@ export class GraphScene {
   /**
    * Select an entity or article and, with `fly`, frame it. `pair` is a live
    * reading-list row id: several rows can share one destination, so the row
-   * says which origin -> destination curve to frame.
+   * says which origin -> destination curve to frame. `owner` is who flies:
+   * the tour passes 'tour', so its next stop can replace this flight.
    */
-  select(key: string | null, fly = true, pair?: string) {
+  select(key: string | null, fly = true, { pair, owner = 'select' }: { pair?: string; owner?: CameraOwner } = {}) {
     this.selected = key;
     this.applyStyle();
     this.refreshFocus();
     if (!fly) return;
-    if (!key) return this.flyHome(1600);
+    if (!key) return this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900);
+    if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
     const post = this.postsByKey.get(key);
     if (post && this.view === 'graph') {
       const c = this.articles.at(key);
       if (!c) return;
       // From inside, a dot is easy to miss: step outside instead (camera.ts).
       const ents = post.entities.map((k) => this.views.get(k)?.base).filter(Boolean) as Vec3[];
-      return void this.flyTo(framePost(c, ents.map((e) => new THREE.Vector3(e.x, e.y, e.z))), 1900);
+      return void this.flyTo(framePost(c, ents.map((e) => new THREE.Vector3(e.x, e.y, e.z))), 1900, owner);
     }
     const v = this.views.get(key);
     if (!v) return;
     const p = v.base;
-    if (this.view === 'system') return void this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]));
+    if (this.view === 'system') return void this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]), 1600, owner);
     const at = new THREE.Vector3(p.x, p.y, p.z);
-    if (v.node.class === 'places') return void this.flyTo(framePlace(at, v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45), 1800);
-    if (v.node.class === 'topics') return void this.flyTo(frameTopic(at), 1800);
+    if (v.node.class === 'places') return void this.flyTo(framePlace(at, v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45), 1800, owner);
+    if (v.node.class === 'topics') return void this.flyTo(frameTopic(at), 1800, owner);
     // Inside the dome, behind the entity on the line from its articles. Not all of them fit, and need not.
     const tiles = [...(this.highlight()?.posts ?? [])]
       .map((k) => this.articles.at(k))
       .filter((c): c is THREE.Vector3 => !!c);
-    void this.flyTo(frameInterior(at, tiles), 1800);
+    void this.flyTo(frameInterior(at, tiles), 1800, owner);
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
@@ -1112,8 +1113,8 @@ export class GraphScene {
   }
 
   /** Fly to the fitted home of the current view; afterwards a reframe may move the camera again. */
-  private flyHome(ms: number) {
-    void this.flyTo(this.homes[this.view], ms).then((r) => {
+  private flyHome(ms: number, owner: CameraOwner = 'select') {
+    void this.flyTo(this.homes[this.view], ms, owner).then((r) => {
       if (r === 'done' && !this.selected) this.atHome = true;
     });
   }
@@ -1166,7 +1167,8 @@ export class GraphScene {
     this.system.group.visible = v === 'system';
   }
 
-  setView(view: View) {
+  /** Switch views; the camera flies home as `owner` (the tour passes 'tour'). */
+  setView(view: View, owner: CameraOwner = 'select') {
     if (view === this.view) return;
     this.view = view;
     this.controls.autoRotateSpeed = view === 'system' ? SYSTEM_SPIN : GRAPH_SPIN;
@@ -1175,7 +1177,7 @@ export class GraphScene {
     this.showViewDecor();
     this.focusLinks.clear();
     this.applyStyle();
-    this.flyHome(2200);
+    this.flyHome(2200, owner);
   }
 
   getCamera(): CameraKeyframe {

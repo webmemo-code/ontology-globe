@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { framePair, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -115,5 +115,18 @@ describe('pathAt', () => {
   it('flies straight inside the dome and in the system view', () => {
     expect(pathPolicy(kf([5, 5, 5], [0, 0, 0]), kf([90, 40, 20], [0, 0, 0]), true)).toBe('linear');
     expect(pathPolicy(kf([0, 0, -150], [0, 0, 0]), kf([90, 40, 20], [0, 0, 0]), false)).toBe('linear');
+  });
+});
+
+describe('camera owners', () => {
+  // A quick Next: the next tour stop must replace the previous stop's flight,
+  // whether that stop flew to a keyframe or framed a selection (#46 review).
+  it('lets a tour flight replace a tour flight', () => {
+    expect(outranks('tour', 'tour')).toBe(false);
+  });
+  it('keeps a user selection over the tour and live follow, and the user over all', () => {
+    expect(outranks('select', 'tour')).toBe(true);
+    expect(outranks('tour', 'follow')).toBe(true);
+    expect(outranks('user', 'select')).toBe(true);
   });
 });
