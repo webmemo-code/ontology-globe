@@ -11,6 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, hash } from './live';
+import { framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -53,15 +54,7 @@ function borderSegments(geometry: Geometry, out: number[]) {
 
 export type View = 'system' | 'graph';
 
-export interface CameraKeyframe {
-  position: { x: number; y: number; z: number };
-  target: { x: number; y: number; z: number };
-}
-
-const kf = (p: [number, number, number], t: [number, number, number]): CameraKeyframe => ({
-  position: { x: p[0], y: p[1], z: p[2] },
-  target: { x: t[0], y: t[1], z: t[2] },
-});
+export type { CameraKeyframe } from './camera';
 export const HOMES: Record<View, CameraKeyframe> = {
   system: kf([52, 62, 92], [-10, 12, 0]),
   // Outside, facing Switzerland: the view that reads like the globe we know.
@@ -223,7 +216,7 @@ export class GraphScene {
   private filter: Set<string> | null = null;
   private filterTop: string | null = null;
   private hovered: string | null = null;
-  private flight: { from: CameraKeyframe; to: CameraKeyframe; t0: number; ms: number; done?: () => void } | null = null;
+  private flight: { from: CameraKeyframe; to: CameraKeyframe; t0: number; ms: number; owner: CameraOwner; path: PathPolicy; done: (r: FlightResult) => void } | null = null;
   // Home cameras fitted to the HUD's free rectangle; HOMES stays the unfitted reference.
   private homes: Record<View, CameraKeyframe> = { system: HOMES.system, graph: HOMES.graph };
   private insets = { top: 0, right: 0, bottom: 0, left: 0 };
@@ -264,6 +257,8 @@ export class GraphScene {
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = 260;
     this.controls.addEventListener('start', () => {
+      // The user takes the camera: any flight in progress ends here, settled as cancelled.
+      this.cancelFlight();
       this.controls.autoRotate = false;
       this.atHome = false;
       this.touchedAt = performance.now();
@@ -1041,76 +1036,48 @@ export class GraphScene {
 
   // ---------- selection & camera ----------
 
-  select(key: string | null, fly = true) {
+  /**
+   * Select an entity or article and, with `fly`, frame it. `pair` is a live
+   * reading-list row id: several rows can share one destination, so the row
+   * says which origin -> destination curve to frame. `owner` is who flies:
+   * the tour passes 'tour', so its next stop can replace this flight.
+   */
+  select(key: string | null, fly = true, { pair, owner = 'select' }: { pair?: string; owner?: CameraOwner } = {}) {
     this.selected = key;
     this.applyStyle();
     this.refreshFocus();
     if (!fly) return;
-    if (!key) return this.flyHome(1600);
+    if (!key) return this.flyHome(1600, owner);
+    const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
+    if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
     const post = this.postsByKey.get(key);
     if (post && this.view === 'graph') {
       const c = this.articles.at(key);
       if (!c) return;
-      // From inside, a dot is easy to miss. Step outside instead, beside
-      // and above it, and aim between the dot and its entities, so the dot
-      // sits off-centre and its rays fan across the frame.
+      // From inside, a dot is easy to miss: step outside instead (camera.ts).
       const ents = post.entities.map((k) => this.views.get(k)?.base).filter(Boolean) as Vec3[];
-      const mid = ents.length
-        ? ents.reduce<THREE.Vector3>((a, b) => a.add(new THREE.Vector3(b.x, b.y, b.z)), new THREE.Vector3()).divideScalar(ents.length)
-        : new THREE.Vector3();
-      const target = c.clone().lerp(mid, 0.45);
-      const out = c.clone().normalize();
-      let side = new THREE.Vector3().crossVectors(out, new THREE.Vector3(0, 1, 0));
-      if (side.lengthSq() < 1e-4) side = new THREE.Vector3(1, 0, 0);
-      side.normalize();
-      const up = new THREE.Vector3().crossVectors(side, out).normalize();
-      const eye = out.multiplyScalar(DOME_R * 1.75).addScaledVector(side, DOME_R * 0.95).addScaledVector(up, DOME_R * 0.5);
-      return this.flyTo(kf(eye.toArray(), target.toArray()), 1900);
+      return void this.flyTo(framePost(c, ents.map((e) => new THREE.Vector3(e.x, e.y, e.z))), 1900, owner);
     }
     const v = this.views.get(key);
     if (!v) return;
     const p = v.base;
-    if (this.view === 'system') return this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]));
-    // A place hangs under its own spot on the true map, in a radial stack with
-    // everything that contains it: frame it from outside, where the map reads.
-    if (v.node.class === 'places') {
-      const out = new THREE.Vector3(p.x, p.y, p.z).normalize();
-      let across = new THREE.Vector3().crossVectors(out, new THREE.Vector3(0, 1, 0));
-      if (across.lengthSq() < 1e-4) across = new THREE.Vector3(1, 0, 0);
-      across.normalize();
-      const up = new THREE.Vector3().crossVectors(across, out).normalize();
-      const reach = v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45;
-      const eye = out.clone().multiplyScalar(DOME_R * reach).addScaledVector(across, DOME_R * 0.22).addScaledVector(up, DOME_R * 0.18);
-      return this.flyTo(kf(eye.toArray(), out.multiplyScalar(DOME_R * 0.96).toArray()), 1800);
-    }
-    // A topic sits on the wheel: look across it from above, from the far side.
-    if (v.node.class === 'topics') {
-      const d = new THREE.Vector3(p.x, 0, p.z);
-      if (d.lengthSq() < 1e-4) d.set(0, 0, -1);
-      d.normalize();
-      const t = new THREE.Vector3(p.x, p.y, p.z);
-      return this.flyTo(kf([-d.x * 30, 36, -d.z * 30], t.clone().lerp(new THREE.Vector3(), 0.15).toArray()), 1800);
-    }
-    // Inside the dome, stand behind the entity on the line from its articles
-    // and look past it: the tag sits in the foreground, a little off-centre,
-    // with its stories glowing behind it. Not all of them fit, and need not.
-    // The eye stays clear of the skin, so the skin's own dots stay out of frame.
-    const t = new THREE.Vector3(p.x, p.y, p.z);
+    if (this.view === 'system') return void this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]), 1600, owner);
+    const at = new THREE.Vector3(p.x, p.y, p.z);
+    if (v.node.class === 'places') return void this.flyTo(framePlace(at, v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45), 1800, owner);
+    if (v.node.class === 'topics') return void this.flyTo(frameTopic(at), 1800, owner);
+    // Inside the dome, behind the entity on the line from its articles. Not all of them fit, and need not.
     const tiles = [...(this.highlight()?.posts ?? [])]
       .map((k) => this.articles.at(k))
       .filter((c): c is THREE.Vector3 => !!c);
-    const toward = tiles.length ? tiles.reduce((a, c) => a.add(c), new THREE.Vector3()).divideScalar(tiles.length) : t.clone();
-    if (toward.lengthSq() < 1) toward.copy(t); // articles all around the globe cancel out
-    toward.setLength(DOME_R);
-    const look = toward.clone().sub(t);
-    if (look.lengthSq() < 1) look.copy(t).negate(); // entity sits on its own articles: look outward from the centre side
-    look.normalize();
-    let side = new THREE.Vector3().crossVectors(look, new THREE.Vector3(0, 1, 0));
-    if (side.lengthSq() < 1e-4) side = new THREE.Vector3(1, 0, 0);
-    side.normalize();
-    const eye = t.clone().addScaledVector(look, -22).addScaledVector(side, 5);
-    if (eye.length() > DOME_R * 0.82) eye.setLength(DOME_R * 0.82);
-    this.flyTo(kf(eye.toArray(), t.clone().lerp(toward, 0.35).toArray()), 1800);
+    void this.flyTo(frameInterior(at, tiles), 1800, owner);
+  }
+
+  /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
+  private frameTans() {
+    const { clientWidth: w, clientHeight: h } = this.container;
+    const { top, right, bottom, left } = this.insets;
+    const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    return { tanV: (t * Math.max(h - top - bottom, 1)) / h, tanH: (t * Math.max(w - left - right, 1)) / h };
   }
 
   private setCamera(k: CameraKeyframe) {
@@ -1118,17 +1085,26 @@ export class GraphScene {
     this.controls.target.set(k.target.x, k.target.y, k.target.z);
   }
 
-  flyTo(to: CameraKeyframe, ms = 1600): Promise<void> {
+  /**
+   * Fly to a keyframe. Resolves 'done' on landing, or 'cancelled' when the user
+   * or a later flight takes over; a flight cannot replace one with a higher
+   * owner (camera.ts), and is then cancelled at once.
+   */
+  flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select'): Promise<FlightResult> {
+    if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('cancelled');
+    this.cancelFlight();
     this.controls.autoRotate = false;
+    const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };
     return new Promise((done) => {
-      this.flight = {
-        from: { position: this.camera.position.clone(), target: this.controls.target.clone() },
-        to,
-        t0: performance.now(),
-        ms,
-        done,
-      };
+      this.flight = { from, to, t0: performance.now(), ms, owner, path: pathPolicy(from, to, this.view === 'graph'), done };
     });
+  }
+
+  /** End the flight in progress, if any; its promise settles as 'cancelled'. */
+  private cancelFlight() {
+    const f = this.flight;
+    this.flight = null;
+    f?.done('cancelled');
   }
 
   /** Back to the current view's home, even with nothing selected (select(null) alone is a no-op then). */
@@ -1137,9 +1113,9 @@ export class GraphScene {
   }
 
   /** Fly to the fitted home of the current view; afterwards a reframe may move the camera again. */
-  private flyHome(ms: number) {
-    void this.flyTo(this.homes[this.view], ms).then(() => {
-      if (!this.selected) this.atHome = true;
+  private flyHome(ms: number, owner: CameraOwner = 'select') {
+    void this.flyTo(this.homes[this.view], ms, owner).then((r) => {
+      if (r === 'done' && !this.selected) this.atHome = true;
     });
   }
 
@@ -1191,7 +1167,8 @@ export class GraphScene {
     this.system.group.visible = v === 'system';
   }
 
-  setView(view: View) {
+  /** Switch views; the camera flies home as `owner` (the tour passes 'tour'). */
+  setView(view: View, owner: CameraOwner = 'select') {
     if (view === this.view) return;
     this.view = view;
     this.controls.autoRotateSpeed = view === 'system' ? SYSTEM_SPIN : GRAPH_SPIN;
@@ -1200,7 +1177,7 @@ export class GraphScene {
     this.showViewDecor();
     this.focusLinks.clear();
     this.applyStyle();
-    this.flyHome(2200);
+    this.flyHome(2200, owner);
   }
 
   getCamera(): CameraKeyframe {
@@ -1332,13 +1309,12 @@ export class GraphScene {
       const f = this.flight;
       const k = Math.min(1, (performance.now() - f.t0) / f.ms);
       const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; // cubic in-out, as in the Cube
-      const lerp = (a: CameraKeyframe['target'], b: CameraKeyframe['target']) =>
-        new THREE.Vector3(a.x + (b.x - a.x) * e, a.y + (b.y - a.y) * e, a.z + (b.z - a.z) * e);
-      this.camera.position.copy(lerp(f.from.position, f.to.position));
-      this.controls.target.copy(lerp(f.from.target, f.to.target));
+      const at = pathAt(f.from, f.to, e, f.path);
+      this.camera.position.copy(at.position);
+      this.controls.target.copy(at.target);
       if (k === 1) {
         this.flight = null;
-        f.done?.();
+        f.done('done');
       }
     }
     if (this.morph) this.stepMorph();
@@ -1390,6 +1366,7 @@ export class GraphScene {
 
   dispose() {
     cancelAnimationFrame(this.frame);
+    this.cancelFlight();
     const el = this.renderer.domElement;
     el.removeEventListener('pointermove', this.onPointerMove);
     el.removeEventListener('pointerdown', this.onPointerDown);

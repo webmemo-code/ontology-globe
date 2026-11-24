@@ -29,6 +29,7 @@ import type { Vec3 } from '../data/model';
 import type { Labels } from './label';
 import { withDepthFade } from './depthFade';
 import { flowingDash } from './flowingDash';
+import { readerArc } from './arc';
 
 export const READER_COLOR = '#FF9000';
 // The bloom pass picks up anything brighter than ~0.62 luminance; READER_COLOR sits
@@ -47,8 +48,6 @@ export const READER_LINE_STYLE: Record<SiteKey, { far: [number, number]; local: 
 export const TIER_COLORS: Record<BotTier, string> = { training: '#4C96F2', search: '#8FBEFF', user: '#2F7DE1', other: '#9D9C9A' };
 const TIER_ORBIT: Record<BotTier, number> = { training: 1.55, search: 1.42, user: 1.3, other: 1.65 };
 const WINDOW_S = 1800;
-/** Reader-to-article distance (globe units, ~11 degrees) below which a read draws as a local hop. */
-const LOCAL_HOP = 12;
 // Six operators sit within 60 km of each other in the Bay Area; at globe scale
 // they would stack into one point, so their satellites spread on a small ring.
 const BAY = ['openai', 'anthropic', 'perplexity', 'google', 'apple', 'meta'];
@@ -155,6 +154,11 @@ export class LiveLayer {
   private pins: THREE.Sprite[] = [];
   private pinGroup = new THREE.Group();
 
+  /** Rendered curve per reading-list row id (see App's `reading`): reader arcs as drawn. */
+  private readerPaths = new Map<string, THREE.Vector3[]>();
+  /** Bot rows: the satellite and what it beams to; the freshest fetch per row wins, as in the list. */
+  private botPaths = new Map<string, { sat: Satellite; at: THREE.Vector3; interior: boolean; ago: number }>();
+
   private labels: Labels;
 
   constructor(labels: Labels) {
@@ -166,7 +170,7 @@ export class LiveLayer {
     this.clear();
     if (!data) return;
     for (const [site, snap] of Object.entries(data) as [SiteKey, NonNullable<LiveBySite[SiteKey]>][]) {
-      if (ctx.atlas) for (const r of snap.readers) this.addReader(site, r.country, r.city, r.post, ctx);
+      if (ctx.atlas) for (const r of snap.readers) this.addReader(site, r.country, r.city, r.post, ctx, `r:${site}:${r.country}:${r.city}:${r.post}`);
       for (const b of snap.bots) {
         const at =
           b.kind === 'post' && b.post
@@ -178,6 +182,9 @@ export class LiveLayer {
         const sat = this.satellite(b.bot, centre ? b.country!.toUpperCase() : '', centre);
         const color = TIER_COLORS[tierOf(b.bot)];
         if (at) sat.targets.push({ at, fresh: 1 - (0.7 * Math.min(b.seconds_ago, WINDOW_S)) / WINDOW_S });
+        const row = `b:${site}:${b.bot}:${b.route}:${b.post ?? b.entity}`;
+        const have = this.botPaths.get(row);
+        if (at && (!have || b.seconds_ago < have.ago)) this.botPaths.set(row, { sat, at, interior: b.kind === 'entity', ago: b.seconds_ago });
         if (at && b.kind === 'post') this.mark(`${site}:${b.post}`, at, color, ctx.name({ site, post: b.post }));
         if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) {
           this.entityHits.set(b.entity!, color);
@@ -207,7 +214,17 @@ export class LiveLayer {
     this.pins.push(pin);
   }
 
-  private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext) {
+  /** A row's rendered origin -> destination curve, origin first; null when the row draws nothing. */
+  pathOf(row: string): { points: THREE.Vector3[]; interior: boolean } | null {
+    const arc = this.readerPaths.get(row);
+    if (arc) return { points: arc, interior: false };
+    const b = this.botPaths.get(row);
+    if (!b) return null;
+    // The beam is straight, from the satellite's anchor (it hovers only ~1% off it).
+    return { points: Array.from({ length: 17 }, (_, i) => b.sat.anchor.clone().lerp(b.at, i / 16)), interior: b.interior };
+  }
+
+  private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext, row: string) {
     // At the reader's city where GA4 names it (Switzerland, ~1 km), else spread
     // around the country's centre; nothing finer than a city is ever known.
     // Keyed like the coordinate lookup, so Zürich and Zurich from the two feeds are one dot.
@@ -227,14 +244,11 @@ export class LiveLayer {
     // The arc and the ring land where the article is set, not on its cartogram tile.
     const to = ctx.destination(site, post) ?? ctx.tile(site, post);
     if (!to) return;
-    const local = from.distanceTo(to) < LOCAL_HOP;
+    // Arc over the skin (arc.ts); a local read draws a low hop and a small ring.
+    const { curve, local } = readerArc(from, to);
     this.mark(`${site}:${post}`, to, READER_RING_COLORS[site], ctx.name({ site, post }), local, true);
-    // Arc over the skin: lift the control point outward, more for longer hops;
-    // a local read barely leaves the surface, so Swiss hops do not tangle into a dome.
-    const mid = from.clone().add(to).multiplyScalar(0.5);
-    const lift = DOME_R * (local ? 1.02 : 1.05 + 0.35 * from.distanceTo(to) / (2 * DOME_R));
-    const ctrl = mid.lengthSq() > 1 ? mid.setLength(lift) : new THREE.Vector3(0, lift, 0);
-    const curve = new THREE.QuadraticBezierCurve3(from, ctrl, to.clone().multiplyScalar(1.005));
+    const points = curve.getPoints(48);
+    if (!this.readerPaths.has(row)) this.readerPaths.set(row, points);
     const dash = READER_LINE_STYLE[site][local ? 'local' : 'far'];
     const { mat, shift } = flowingDash({
       color: READER_ARC_COLORS[site],
@@ -245,7 +259,7 @@ export class LiveLayer {
       depthWrite: false,
     });
     withDepthFade(mat, 0.6, 0.6);
-    const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)), mat);
+    const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), mat);
     arc.userData.shift = shift;
     arc.computeLineDistances();
     this.readerGroup.add(arc);
@@ -413,6 +427,8 @@ export class LiveLayer {
     this.rings = [];
     this.targets.clear();
     this.entityHits.clear();
+    this.readerPaths.clear();
+    this.botPaths.clear();
     this.arcs = [];
     this.dots = [];
     this.seats.clear();

@@ -176,8 +176,12 @@ function Viewer({ graph }: { graph: Graph }) {
   useEffect(() => {
     sceneRef.current?.setView(view);
   }, [view]);
+  // A live row picked in the reading lists: which origin -> destination curve to frame.
+  const pairRef = useRef<string | null>(null);
   useEffect(() => {
-    if (tourStep === null) sceneRef.current?.select(selected);
+    if (tourStep !== null) return;
+    sceneRef.current?.select(selected, true, { pair: pairRef.current ?? undefined });
+    pairRef.current = null;
   }, [selected, tourStep]);
   useEffect(() => {
     if (detailsRequested || (!query && !live && !(selected && posts.has(selected)))) return;
@@ -268,7 +272,13 @@ function Viewer({ graph }: { graph: Graph }) {
   useEffect(() => {
     sceneRef.current?.setFilter(q ? new Set(hits.map((n) => n.key)) : null, hits[0]?.key ?? null);
   }, [hits, q]);
-  const pickHit = (key: string) => {
+  const pickHit = (key: string, row?: string) => {
+    pairRef.current = row ?? null;
+    // Another row with the same destination: selected stays put, so frame it here.
+    if (row && key === selected && tourStep === null) {
+      sceneRef.current?.select(key, true, { pair: row });
+      pairRef.current = null;
+    }
     setTourStep(null);
     setQuery('');
     setSelected(key);
@@ -281,13 +291,14 @@ function Viewer({ graph }: { graph: Graph }) {
     const stopView = stop.view ?? 'graph';
     const changing = stopView !== viewRef.current;
     setView(stopView);
-    scene.setView(stopView);
+    scene.setView(stopView, 'tour');
     setSelected(stop.select ?? null);
     // A view change flies the camera itself; let it land before the stop's own move.
     const id = setTimeout(
       () => {
-        scene.select(stop.select ?? null, !stop.camera);
-        if (stop.camera) scene.flyTo(stop.camera, 2000);
+        // Both kinds of stop fly as the tour, so a quick Next replaces either.
+        scene.select(stop.select ?? null, !stop.camera, { owner: 'tour' });
+        if (stop.camera) void scene.flyTo(stop.camera, 2000, 'tour');
       },
       changing ? 2300 : 0,
     );
