@@ -30,3 +30,13 @@ export function nextFollow(
   const isNew = (r: ReadingRow) => present.includes(r.site) && !!prev.get(r.site) && !prev.get(r.site)!.has(r.id);
   return { row: readers.find(isNew) ?? bots.find(isNew) ?? null, baseline };
 }
+
+/**
+ * A row the camera could not fly to when it came in (the user was dragging,
+ * had just touched the globe, or a higher flight ran) waits here: it is already
+ * in the baseline, so no later poll would offer it again. Retried while it is
+ * still listed; null once it is gone.
+ */
+export function stillListed(pending: string | null, readers: ReadingRow[], bots: ReadingRow[]): ReadingRow | null {
+  return pending ? (readers.find((r) => r.id === pending) ?? bots.find((r) => r.id === pending) ?? null) : null;
+}

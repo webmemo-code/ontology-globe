@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SiteKey } from '../data/types';
 import type { ReadingRow } from './derive';
-import { nextFollow, type Baseline } from './follow';
+import { nextFollow, stillListed, type Baseline } from './follow';
 
 const reader = (site: SiteKey, id: string): ReadingRow => ({ id: `r:${site}:${id}`, kind: 'reader', site, who: id, what: id, pick: id });
 const bot = (site: SiteKey, id: string): ReadingRow => ({ id: `b:${site}:${id}`, kind: 'bot', site, who: id, what: id, pick: id });
@@ -47,5 +47,24 @@ describe('nextFollow', () => {
   it('a blog seen for the first time counts nothing as new', () => {
     const first = nextFollow(null, [], [], ['travelmemo']);
     expect(nextFollow(first.baseline, [reader('reisememo', 'a')], [], BOTH).row).toBeNull();
+  });
+});
+
+describe('a row that came in while the camera was busy', () => {
+  // Poll 1 brings row a during a drag; poll 2 is unchanged (quiet feed). The
+  // baseline already holds a, so only the pending row can still fly (#47 review).
+  it('stays retryable after an unchanged poll while it is listed', () => {
+    const rows = [reader('travelmemo', 'a')];
+    const p1 = nextFollow(nextFollow(null, [], [], BOTH).baseline, rows, [], BOTH);
+    expect(p1.row?.id).toBe('r:travelmemo:a');
+    const pending = p1.row!.id; // followPair said 'busy'
+    const p2 = nextFollow(p1.baseline, rows, [], BOTH);
+    expect(p2.row).toBeNull();
+    expect(stillListed(pending, rows, [])?.id).toBe('r:travelmemo:a');
+  });
+
+  it('is dropped once it leaves the lists', () => {
+    expect(stillListed('r:travelmemo:a', [reader('travelmemo', 'b')], [])).toBeNull();
+    expect(stillListed(null, [reader('travelmemo', 'b')], [])).toBeNull();
   });
 });

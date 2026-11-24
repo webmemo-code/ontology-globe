@@ -1084,21 +1084,28 @@ export class GraphScene {
    * owner 'follow', then circle it slowly until something else moves the
    * camera. False when the user is busy (pressing, touched in the last
    * SPIN_IDLE_MS, a selection, the other view, a higher flight) or the row draws
-   * no curve. Reduced motion: a jump cut, no circling.
+   * no curve. Reduced motion: a jump cut, no circling. 'busy' means try
+   * again later; 'none' means this row can never be framed.
    */
-  followPair(row: string): boolean {
+  followPair(row: string): 'started' | 'busy' | 'none' {
     // touchedAt starts at 0: only a real touch counts, not the first seconds after load.
     const touched = this.touchedAt > 0 && performance.now() - this.touchedAt < SPIN_IDLE_MS;
-    if (this.view !== 'graph' || this.selected || this.pressed || touched) return false;
-    if (this.flight && outranks(this.flight.owner, 'follow')) return false;
+    if (this.view !== 'graph' || this.selected || this.pressed || touched) return 'busy';
+    if (this.flight && outranks(this.flight.owner, 'follow')) return 'busy';
     const path = this.live.pathOf(row);
-    if (!path) return false;
+    if (!path) return 'none';
     const reduced = this.reduced.matches;
     const shot = framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key;
     void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
       if (r === 'done' && !reduced) this.drifting = true;
     });
-    return true;
+    return 'started';
+  }
+
+  /** Follow switched off: end a follow flight and the drift where they are; other flights carry on. */
+  stopFollow() {
+    if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
+    this.drifting = false;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */

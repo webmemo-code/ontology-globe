@@ -12,7 +12,7 @@ import { ServedStrip } from './hud/ServedStrip';
 import { TopBar } from './hud/TopBar';
 import { demoHistory, liveStats, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
 import { useMedia } from './hud/useMedia';
-import { nextFollow, type Baseline } from './hud/follow';
+import { nextFollow, stillListed, type Baseline } from './hud/follow';
 import { READER_COLOR, TIER_COLORS } from './three/live';
 import { CLASS_COLORS, CLASS_NAMES, PERF_RANK, cooccurring, descendants, labelFor, placeTree, postsFor, slugTitle, statsFor } from './data/model';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode, SystemNumbers } from './data/types';
@@ -249,9 +249,19 @@ function Viewer({ graph }: { graph: Graph }) {
   const baselineRef = useRef<Baseline | null>(null);
   const followedRef = useRef<string | null>(null);
   followedRef.current = followed;
+  // A row that came in while the camera was busy; retried below until it flies or leaves the lists.
+  const pendingRef = useRef<string | null>(null);
+  const readingRef = useRef(reading);
+  readingRef.current = reading;
+  const tryFollow = (id: string) => {
+    const r = sceneRef.current?.followPair(id);
+    pendingRef.current = r === 'busy' ? id : null;
+    if (r === 'started') setFollowed(id);
+  };
   useEffect(() => {
     // A new blog filter or live switched off: start over, and leave a followed pair for home.
     baselineRef.current = null;
+    pendingRef.current = null;
     if (followedRef.current) sceneRef.current?.resetView();
     setFollowed(null);
   }, [mode, live]);
@@ -259,11 +269,24 @@ function Viewer({ graph }: { graph: Graph }) {
     if (!liveState) return;
     const { row, baseline } = nextFollow(baselineRef.current, reading.readers, reading.bots, Object.keys(liveState) as SiteKey[]);
     baselineRef.current = baseline;
-    if (!row || !follow || tourStep !== null || selected) return;
-    if (sceneRef.current?.followPair(row.id)) setFollowed(row.id);
+    const next = row ?? stillListed(pendingRef.current, reading.readers, reading.bots);
+    pendingRef.current = next?.id ?? null;
+    if (!next || !follow || tourStep !== null || selected) return;
+    tryFollow(next.id);
     // Only a new snapshot triggers a flight; the other values are read as they are then.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveState]);
+  // Retry a waiting row once a second, so the camera moves as soon as it is free, even on a quiet feed.
+  useEffect(() => {
+    if (!follow || tourStep !== null || selected) return;
+    const id = setInterval(() => {
+      const row = stillListed(pendingRef.current, readingRef.current.readers, readingRef.current.bots);
+      if (row) tryFollow(row.id);
+      else pendingRef.current = null;
+    }, 1000);
+    return () => clearInterval(id);
+    // tryFollow reads refs only; the interval restarts when following becomes possible again.
+  }, [follow, tourStep, selected]);
 
   // Search: every query word must start a word of the name ("zer" finds Zermatt,
   // not SwitZERland; "park weggis" finds the Park Weggis article). Entities rank
@@ -469,6 +492,9 @@ function Viewer({ graph }: { graph: Graph }) {
   );
 
   const toggleFollow = () => {
+    // Off means still: stop a follow flight or drift where it is.
+    if (follow) sceneRef.current?.stopFollow();
+    pendingRef.current = null;
     setFollow(!follow);
     setFollowed(null);
   };
