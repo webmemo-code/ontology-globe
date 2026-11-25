@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, hash } from './live';
-import { frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { frameBeamInside, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -1079,7 +1079,7 @@ export class GraphScene {
     // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
+    if (path) return void this.flyTo(this.pairShot(path), 1900, owner);
     const shot = this.shotFor(key);
     if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
   }
@@ -1178,7 +1178,7 @@ export class GraphScene {
     const path = this.live.pathOf(row);
     if (!path) return 'none';
     const reduced = this.reduced.matches;
-    const shot = framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key;
+    const shot = this.pairShot(path);
     void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
       if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
@@ -1189,6 +1189,17 @@ export class GraphScene {
   stopFollow() {
     if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
     if (this.drift?.kind === 'pair') this.drift = null;
+  }
+
+  /**
+   * The shot for a live row: an agent fetching an entity inside the dome is
+   * framed from inside, along its beam (#54); everything else, readers and
+   * article fetches, from outside (framePair).
+   */
+  private pairShot(path: { points: THREE.Vector3[]; interior: boolean }): CameraKeyframe {
+    const eye = this.camera.position;
+    if (path.interior) return frameBeamInside(path.points[0], path.points[path.points.length - 1], eye);
+    return framePair(path.points, { ...this.frameTans(), eye }).key;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */

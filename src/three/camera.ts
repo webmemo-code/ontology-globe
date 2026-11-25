@@ -102,8 +102,6 @@ export interface FrameOpts {
   eye?: THREE.Vector3;
   /** Share of the free rectangle kept empty at its edges. */
   margin?: number;
-  /** The destination sits inside the dome (an entity): the skin is translucent, so it is not tested for visibility. */
-  interiorEnd?: boolean;
 }
 
 export interface PairFrame {
@@ -153,9 +151,30 @@ export function framePair(points: THREE.Vector3[], o: FrameOpts): PairFrame {
   // Stay above the country bars, as high as an article shot (framePost), however short the hop.
   while (target.clone().addScaledVector(dir, dist).length() < DOME_R * 1.75) dist += 1;
   const eye = target.clone().addScaledVector(dir, dist);
-  const tested = o.interiorEnd ? points.filter((p) => p.length() >= DOME_R * 0.99) : points;
-  if (tested.every((p) => visibleFrom(eye, p))) return { key: key(eye, target), full: true };
+  if (points.every((p) => visibleFrom(eye, p))) return { key: key(eye, target), full: true };
   return { key: frameDestination(from, to), full: false };
+}
+
+/**
+ * An AI agent fetching an entity inside the dome (#54): step inside, just
+ * behind the entity, and look along the beam toward the agent's satellite, a
+ * little off to one side so the beam reads as a diagonal. The cylinder sits in
+ * the foreground, the satellite beyond the translucent skin. The eye stays
+ * clear of the skin, as in frameInterior.
+ */
+export function frameBeamInside(origin: THREE.Vector3, dest: THREE.Vector3, prevEye?: THREE.Vector3): CameraKeyframe {
+  const dir = origin.clone().sub(dest);
+  if (dir.lengthSq() < 1e-6) dir.copy(dest.lengthSq() > 1e-6 ? dest : new THREE.Vector3(0, 0, -1));
+  dir.normalize();
+  const eyeWith = (side: THREE.Vector3) => {
+    const eye = dest.clone().addScaledVector(dir, -18).addScaledVector(side, 7).addScaledVector(UP, 3);
+    return eye.length() > DOME_R * 0.82 ? eye.setLength(DOME_R * 0.82) : eye;
+  };
+  // Aim past the entity toward where the beam leaves the dome, so the cylinder
+  // sits low in the frame and the satellite high.
+  const b = dest.dot(dir);
+  const exit = dest.clone().addScaledVector(dir, -b + Math.sqrt(Math.max(0, b * b - dest.lengthSq() + DOME_R * DOME_R)));
+  return key(eyeWith(sideFor(dir, eyeWith, prevEye)), dest.clone().lerp(exit, 0.35));
 }
 
 /** The destination from outside, 35 degrees away from the origin's side. */
