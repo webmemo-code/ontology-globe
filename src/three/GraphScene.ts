@@ -203,6 +203,8 @@ export class GraphScene {
   private photos: { tex: THREE.Texture; index: AtlasIndex } | null = null;
   // A blurred photo of the selection's best article, fading in over the sky.
   private photoSky!: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  /** Background sphere, photo sky and stars; follows the camera (buildBackdrop). */
+  private sky = new THREE.Group();
   private photoSkyKey: string | null = null;
   private photoSkyTarget = 0;
   private links = new THREE.Group();
@@ -344,8 +346,13 @@ export class GraphScene {
 
   // ---------- construction ----------
 
+  /**
+   * The sky (#40): background sphere, photo sky and stars, centred on the eye
+   * every frame (loop), so they stay 520-600 from the camera however far the
+   * HUD refit pulls it back, and no star can sit between the camera and the globe.
+   */
   private buildBackdrop() {
-    this.scene.add(
+    this.sky.add(
       new THREE.Mesh(
         new THREE.SphereGeometry(600, 48, 48),
         new THREE.MeshBasicMaterial({ side: THREE.BackSide, color: '#101010', fog: false }),
@@ -356,10 +363,11 @@ export class GraphScene {
       new THREE.MeshBasicMaterial({ side: THREE.BackSide, transparent: true, opacity: 0, depthWrite: false, fog: false, color: '#6f7a8c' }),
     );
     this.photoSky.renderOrder = -2;
-    this.scene.add(this.photoSky);
-    // Stars stay behind everything (#40): a thin shell beyond the farthest the
-    // camera goes (controls.maxDistance 260, a little more after refit), just
-    // inside the photo sky at 590. Fixed pixel size, so distance does not shrink them.
+    this.sky.add(this.photoSky);
+    // Stars: a thin shell just inside the photo sky, fixed pixel size. They draw
+    // first in the transparent pass (-3, before the land and the photo sky at -2
+    // and the article dots at -1) and write no depth, so every globe layer
+    // blends over them.
     const stars = new Float32Array(1500 * 3);
     for (let i = 0; i < stars.length; i += 3) {
       const v = new THREE.Vector3().randomDirection().multiplyScalar(520 + Math.random() * 60);
@@ -367,7 +375,10 @@ export class GraphScene {
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(stars, 3));
-    this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfcfcf', size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.5, fog: false })));
+    const points = new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfcfcf', size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.5, depthWrite: false, fog: false }));
+    points.renderOrder = -3;
+    this.sky.add(points);
+    this.scene.add(this.sky);
   }
 
   private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
@@ -1483,6 +1494,7 @@ export class GraphScene {
     const outside = this.view === 'graph' && this.camera.position.length() > DOME_R;
     this.labels.group.visible = !outside;
     if (!outside) this.labels.update(this.camera, w, h, this.view, this.hideLabel, fade, this.view === 'graph' ? THREE.MathUtils.lerp(0.62, 1, this.globeDetail.value) : 1, { counts: this.budgeted, max: this.narrow ? 5 : 8 });
+    this.sky.position.copy(this.camera.position);
     this.bloom.composer.render();
     this.renderer.autoClear = false;
     this.renderer.clearDepth();
