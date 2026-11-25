@@ -357,14 +357,17 @@ export class GraphScene {
     );
     this.photoSky.renderOrder = -2;
     this.scene.add(this.photoSky);
+    // Stars stay behind everything (#40): a thin shell beyond the farthest the
+    // camera goes (controls.maxDistance 260, a little more after refit), just
+    // inside the photo sky at 590. Fixed pixel size, so distance does not shrink them.
     const stars = new Float32Array(1500 * 3);
     for (let i = 0; i < stars.length; i += 3) {
-      const v = new THREE.Vector3().randomDirection().multiplyScalar(180 + Math.random() * 300);
+      const v = new THREE.Vector3().randomDirection().multiplyScalar(520 + Math.random() * 60);
       stars.set([v.x, v.y, v.z], i);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(stars, 3));
-    this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfcfcf', size: 0.7, transparent: true, opacity: 0.5, fog: false })));
+    this.scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: '#cfcfcf', size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.5, fog: false })));
   }
 
   private makeBox(node: GraphNode, box: THREE.CylinderGeometry, edges: THREE.EdgesGeometry, halo: THREE.Texture, base: Vec3): Box {
