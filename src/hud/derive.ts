@@ -4,6 +4,8 @@ import type { SiteKey, SiteMode } from '../data/types';
 export type ReadingRow = {
   id: string; kind: 'reader' | 'bot'; site: SiteKey; who: string; what: string; pick: string | null;
   tier?: BotTier; route?: string;
+  /** The crawler's key (e.g. 'gptbot'), for its icon; bot rows only. */
+  bot?: string;
 };
 const REGION_NAMES = (() => {
   try {

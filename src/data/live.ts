@@ -1,6 +1,7 @@
 // Live layer data: who is reading what right now, from each blog's public
 // /wp-json/webmemo-schema/v1/live route.
 // Presence only: the route never sends counts, and neither does this module.
+import { BOT_ICON_FILES } from './botIcons';
 import { alpha2ToNumeric } from 'i18n-iso-countries';
 import { geoCentroid } from 'd3-geo';
 import type { Atlas } from './atlas';
@@ -54,6 +55,8 @@ const BOT_NAMES: Record<string, string> = {
   'mistralai-user': 'Mistral',
 };
 export const botName = (bot: string) => BOT_NAMES[bot] ?? bot;
+/** Every crawler the live layer names. */
+export const KNOWN_BOTS = Object.keys(BOT_NAMES);
 
 export interface Operator {
   name: string;
@@ -96,6 +99,17 @@ const BOT_OPERATOR: Record<string, keyof typeof OPERATORS> = {
   'cohere-ai': 'cohere',
   duckassistbot: 'duckduckgo',
 };
+// Whose site icon stands for a crawler (#56): its operator, plus the two
+// crawlers with no operator record above.
+const BOT_BRAND: Record<string, string> = { ccbot: 'commoncrawl', diffbot: 'diffbot' };
+
+/** The crawler's site icon, as a path under public/ (bot-icons/), or null when there is none. */
+export function botIcon(bot: string): string | null {
+  const brand = BOT_OPERATOR[bot] ?? BOT_BRAND[bot];
+  const file = brand ? BOT_ICON_FILES[brand] : undefined;
+  return file ? `bot-icons/${file}` : null;
+}
+
 /** Operator key and record, or null when unknown. */
 export function operatorOf(bot: string): [string, Operator] | null {
   const key = BOT_OPERATOR[bot];

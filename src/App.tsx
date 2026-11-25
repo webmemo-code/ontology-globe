@@ -238,6 +238,7 @@ function Viewer({ graph }: { graph: Graph }) {
         kind: 'bot',
         site,
         who: botName(b.bot),
+        bot: b.bot,
         tier: tierOf(b.bot),
         route: b.route,
         what: p ? titleOf(p) : labelFor(n!, site),
