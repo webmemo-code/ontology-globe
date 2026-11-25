@@ -106,9 +106,10 @@ button, input { font: inherit; color: inherit; }
 .rows .tag-reader.de { background: rgba(152, 152, 152, 0.16); color: var(--grey); }
 .rows .tag-bot { grid-row: 1; background: var(--blue-wash); color: var(--blue-ink); }
 .rows .route-pill { grid-row: 2; padding: 0 6px; border: 1px solid var(--blue); border-radius: 999px; color: var(--blue-ink); }
-/* AI agents: a third column for the blog's EN/DE chip, after purpose and route. */
+/* AI agents: a third column for the blog's EN/DE chip, after purpose and route; blue like the bot design. */
 .agents .rows button { grid-template-columns: minmax(0, 1fr) auto auto; }
-.agents .rows .tag-reader { grid-column: 3; }
+.agents .rows .tag-site { grid-column: 3; grid-row: 1 / span 2; align-self: center; background: var(--blue-wash); color: var(--blue-ink); }
+.agents .rows .tag-site.de { background: rgba(152, 152, 152, 0.16); color: var(--grey); }
 
 .served-wrap { position: absolute; left: 362px; right: 412px; bottom: 16px; display: flex; justify-content: center; pointer-events: none; }
 .served { position: relative; pointer-events: auto; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 18px; padding: 10px 16px; font-family: var(--mono); font-size: 11px; }
