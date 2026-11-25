@@ -1,22 +1,22 @@
-# Travel Ontology
+# Travel Graph Explorer
 
-Interactive 3D map of the knowledge graph behind
-[travelmemo.com](https://travelmemo.com) and [reisememo.ch](https://reisememo.ch).
-Every cylinder is one entity from the ontology both blogs share: a place, a
-topic, an organization, a trip or an author.
+**Live:** [webmemo-code.github.io/travel-graph-explorer](https://webmemo-code.github.io/travel-graph-explorer?live)
 
-**Live:** https://webmemo-code.github.io/ontology-globe/
-(`?live=demo` feeds made-up traffic for previews and recordings)
+![The globe from outside, with live readers and AI agents](docs/screens/globe-outside.jpg)
 
 ![Inside the globe: the topic wheel in the spotlight](docs/screens/globe-inside.jpg)
+
+The interactive 3D graph explorer is based on data from 
+[travelmemo.com](https://travelmemo.com) and [reisememo.ch](https://reisememo.ch).
+
+Every cylinder is one entity from the ontology both blogs share: a place, a
+topic, an organization, a trip or an author.
 
 ## Two views
 
 **◍ Globe.** It opens from outside, with Switzerland facing you. Fly inside to
 see the places hanging on their shells and the topics standing on a wheel in
 the middle.
-
-![The globe from outside, with live readers and AI agents](docs/screens/globe-outside.jpg)
 
 **⬡ How it works.** The ontology is a small globe, the single source of
 truth. Stacked above it are the two WordPress sites, the generated outputs
