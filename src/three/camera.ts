@@ -31,8 +31,12 @@ export type CameraOwner = 'drift' | 'follow' | 'tour' | 'select' | 'user';
 const RANK: Record<CameraOwner, number> = { drift: 0, follow: 1, tour: 2, select: 3, user: 4 };
 export const outranks = (a: CameraOwner, b: CameraOwner) => RANK[a] > RANK[b];
 
-/** How a flight ended: it landed, or another flight (or the user) took over. */
-export type FlightResult = 'done' | 'cancelled';
+/**
+ * How a flight ended: it landed ('done'), another flight or the user took over
+ * while it flew ('cancelled'), or it never started because a higher owner's
+ * flight was running ('refused'). Only 'done' means the camera got there.
+ */
+export type FlightResult = 'done' | 'cancelled' | 'refused';
 
 // ---------- flight paths ----------
 
@@ -197,6 +201,19 @@ export function framePlace(p: THREE.Vector3, reach: number, prevEye?: THREE.Vect
     return out.clone().multiplyScalar(DOME_R * reach).addScaledVector(across, DOME_R * 0.22).addScaledVector(up, DOME_R * 0.18);
   };
   return key(eyeWith(sideFor(out, eyeWith, prevEye)), out.multiplyScalar(DOME_R * 0.96));
+}
+
+/**
+ * Inside the dome, from the skin side: just inside the skin above `t`, looking
+ * in toward the centre, so `t` sits in the foreground with the inner shells and
+ * the wheel beyond. A run of these shots all look inward, so a camera moving
+ * between them never passes its own target.
+ */
+export function frameInward(t: THREE.Vector3, prevEye?: THREE.Vector3): CameraKeyframe {
+  const out = t.lengthSq() > 1e-6 ? t.clone().normalize() : new THREE.Vector3(0, 0, -1);
+  const r = Math.min(t.length() + 16, DOME_R * 0.86);
+  const eyeWith = (side: THREE.Vector3) => out.clone().multiplyScalar(r).addScaledVector(side, 5).addScaledVector(UP, 3);
+  return key(eyeWith(sideFor(out, eyeWith, prevEye)), t.clone().multiplyScalar(0.55));
 }
 
 /** A topic sits on the wheel: look across it from above, from the far side. */

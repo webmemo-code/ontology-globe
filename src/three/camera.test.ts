@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -128,5 +128,27 @@ describe('camera owners', () => {
     expect(outranks('select', 'tour')).toBe(true);
     expect(outranks('tour', 'follow')).toBe(true);
     expect(outranks('user', 'select')).toBe(true);
+  });
+});
+
+describe('frameInward', () => {
+  // The inside tour stops (#45) all look in toward the centre, so a straight
+  // flight between two of them never passes through its own target.
+  const entities = [new THREE.Vector3(-3, 2, -30), new THREE.Vector3(-1, 1, -42), new THREE.Vector3(4, -6, -20)];
+  it('keeps the eye inside the dome and further out than its target', () => {
+    for (const t of entities) {
+      const { position: p, target: q } = frameInward(t);
+      const eye = new THREE.Vector3(p.x, p.y, p.z);
+      const target = new THREE.Vector3(q.x, q.y, q.z);
+      expect(eye.length()).toBeLessThanOrEqual(DOME_R * 0.9);
+      expect(eye.length()).toBeGreaterThan(target.length());
+    }
+  });
+  it('a straight flight between two inward shots never meets its target', () => {
+    const [a, b] = [frameInward(entities[0]), frameInward(entities[1], new THREE.Vector3(0, 0, -50))];
+    for (let i = 0; i <= 32; i++) {
+      const { position, target } = pathAt(a, b, i / 32, 'linear');
+      expect(position.distanceTo(target)).toBeGreaterThan(5);
+    }
   });
 });
