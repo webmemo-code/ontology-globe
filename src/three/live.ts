@@ -36,6 +36,8 @@ export const READER_COLOR = '#FF9000';
 // right at that edge, so dots use a dimmed copy (local rings dim their blog colour the same way)
 // and stay crisp in a crowd.
 const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
+/** Satellite icons: dimmed below the bloom threshold, hue kept. */
+const ICON_DIM = new THREE.Color(0.58, 0.58, 0.58);
 /** Both blogs read orange; the line style tells them apart (READER_LINE_STYLE). */
 export const READER_ARC_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#FF9000' };
 /** A read article's ring, by blog. */
@@ -328,7 +330,9 @@ export class LiveLayer {
     const iconUrl = botIcon(bot);
     let icon: THREE.Sprite | null = null;
     if (iconUrl) {
-      icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.iconTexture(iconUrl), transparent: true, depthWrite: false, fog: false }));
+      // Tinted to 58% grey: a white icon then stays under the bloom threshold (~0.62
+      // luminance, see READER_DIM), so it reads as a mark, not a glow.
+      icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.iconTexture(iconUrl), color: ICON_DIM, transparent: true, depthWrite: false, fog: false }));
       icon.scale.setScalar(2.2); // inside the octahedron (radius 2.4), facing the camera while the wireframe spins
       this.group.add(icon);
     }
