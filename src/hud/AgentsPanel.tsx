@@ -14,6 +14,8 @@ export function AgentsPanel({ rows, count, onPick, active }: { rows: ReadingRow[
               <span className="tag tag-bot">{TIER_LABELS[r.tier!]}</span>
               <span className="what">→ {r.what}</span>
               {routeLabel(r.route) && <span className="route-pill">{routeLabel(r.route)}</span>}
+              {/* Which blog the agent fetched from: the same chip as a reader row. */}
+              <span className={`tag tag-reader${r.site === 'reisememo' ? ' de' : ''}`}>{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
             </button>
           </li>
         ))}
