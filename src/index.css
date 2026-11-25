@@ -109,6 +109,8 @@ button, input { font: inherit; color: inherit; }
 /* AI agents: a third column for the blog's EN/DE chip, after purpose and route; blue like the bot design. */
 .agents .rows button { grid-template-columns: minmax(0, 1fr) auto auto; }
 .agents .rows .tag-site { grid-column: 3; grid-row: 1 / span 2; align-self: center; background: var(--blue-wash); color: var(--blue-ink); }
+.bot-icon { display: inline-flex; width: 14px; height: 14px; margin-right: 6px; vertical-align: -2px; border-radius: 3px; overflow: hidden; }
+.bot-icon img { width: 14px; height: 14px; object-fit: contain; }
 .agents .rows .tag-site.de { background: rgba(152, 152, 152, 0.16); color: var(--grey); }
 
 .served-wrap { position: absolute; left: 362px; right: 412px; bottom: 16px; display: flex; justify-content: center; pointer-events: none; }

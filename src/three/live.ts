@@ -22,7 +22,7 @@
 // draws a low hop and a small ring instead of a full arc and ping.
 import * as THREE from 'three';
 import { DOME_R, domeDirection } from '../data/globe';
-import { botName, cityCentre, foldCity, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
+import { botIcon, botName, cityCentre, foldCity, countryCentre, operatorOf, tierOf, type BotTier, type LiveBySite } from '../data/live';
 import type { Atlas } from '../data/atlas';
 import type { SiteKey } from '../data/types';
 import type { Vec3 } from '../data/model';
@@ -127,6 +127,8 @@ interface Satellite {
   /** That country's centre as [lat, lon]; null in the fallback. */
   centre: [number, number] | null;
   mesh: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+  /** The crawler's site icon at the centre of the spinning wireframe (#56); null when there is none. */
+  icon: THREE.Sprite | null;
   anchor: THREE.Vector3;
   phase: number;
   targets: { at: THREE.Vector3; fresh: number }[];
@@ -323,12 +325,31 @@ export class LiveLayer {
     withDepthFade(tetherMat, 0.6, 0.6);
     const tethers = new THREE.LineSegments(new THREE.BufferGeometry(), tetherMat);
     this.group.add(mesh, beams, tethers);
+    const iconUrl = botIcon(bot);
+    let icon: THREE.Sprite | null = null;
+    if (iconUrl) {
+      icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.iconTexture(iconUrl), transparent: true, depthWrite: false, fog: false }));
+      icon.scale.setScalar(2.2); // inside the octahedron (radius 2.4), facing the camera while the wireframe spins
+      this.group.add(icon);
+    }
     const sat: Satellite = {
-      key: `live-bot:${id}`, bot, country, centre, mesh, anchor: new THREE.Vector3(), phase: hash(id) * 6.28,
+      key: `live-bot:${id}`, bot, country, centre, mesh, icon, anchor: new THREE.Vector3(), phase: hash(id) * 6.28,
       targets: [], beams, origin: null, tethers,
     };
     this.sats.set(id, sat);
     return sat;
+  }
+
+  /** One texture per icon file, shared by every satellite of that brand and kept across polls. */
+  private iconTextures = new Map<string, THREE.Texture>();
+  private iconTexture(url: string): THREE.Texture {
+    let t = this.iconTextures.get(url);
+    if (!t) {
+      t = new THREE.TextureLoader().load(url);
+      t.colorSpace = THREE.SRGBColorSpace;
+      this.iconTextures.set(url, t);
+    }
+    return t;
   }
 
   /** Position and label every marker; markers sharing a country spread evenly on a ring round its centre. */
@@ -383,6 +404,7 @@ export class LiveLayer {
     for (const s of this.sats.values()) {
       s.mesh.position.copy(s.anchor).multiplyScalar(1 + 0.012 * Math.sin(t * 1.3 + s.phase)); // a gentle hover
       s.mesh.rotation.set(t * 0.7, t * 1.1, 0);
+      s.icon?.position.copy(s.mesh.position);
       this.labels.move(s.key, toPlain(s.mesh.position.clone().multiplyScalar(1.06)));
       const tie = s.tethers.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
       if (tie && s.origin) {
@@ -434,6 +456,10 @@ export class LiveLayer {
     this.seats.clear();
     for (const s of this.sats.values()) {
       this.group.remove(s.mesh, s.beams, s.tethers);
+      if (s.icon) {
+        this.group.remove(s.icon);
+        s.icon.material.dispose(); // the texture stays in iconTextures for the next poll
+      }
       s.tethers.geometry.dispose();
       s.tethers.material.dispose();
       s.mesh.geometry.dispose();
