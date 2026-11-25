@@ -1,6 +1,6 @@
 # Travel Graph Explorer
 
-**Live:** [webmemo-code.github.io/travel-graph-explorer](https://webmemo-code.github.io/travel-graph-explorer?live)
+**Live:** [webmemo-code.github.io/travel-graph-explorer](https://webmemo-code.github.io/travel-graph-explorer/?live)
 
 ![The globe from outside, with live readers and AI agents](docs/screens/globe-outside.jpg)
 
