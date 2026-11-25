@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { GraphScene, type View } from './three/GraphScene';
+import { GraphScene, type CameraKeyframe, type View } from './three/GraphScene';
 import { Lens } from './Lens';
 import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
@@ -87,6 +87,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const [query, setQuery] = useState('');
   const [, setDetailsLoaded] = useState(false);
   const [tourStep, setTourStep] = useState<number | null>(null);
+  // The stop whose shot the camera has reached: caption and highlight follow it, not the button press.
+  const [shownStep, setShownStep] = useState<number | null>(null);
   const [view, setView] = useState<View>('graph');
   // Read by the tour effect without re-running it when the stop itself changes the view.
   const viewRef = useRef(view);
@@ -180,9 +182,13 @@ function Viewer({ graph }: { graph: Graph }) {
   }, [view]);
   // A live row picked in the reading lists: which origin -> destination curve to frame.
   const pairRef = useRef<string | null>(null);
+  // What the tour last selected: closing the tour on it keeps the shot instead of flying to it.
+  const tourSelRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (tourStep !== null) return;
-    sceneRef.current?.select(selected, true, { pair: pairRef.current ?? undefined });
+    const quiet = tourSelRef.current !== undefined && selected === tourSelRef.current;
+    tourSelRef.current = undefined;
+    sceneRef.current?.select(selected, !quiet, { pair: pairRef.current ?? undefined });
     pairRef.current = null;
   }, [selected, tourStep]);
   useEffect(() => {
@@ -333,25 +339,47 @@ function Viewer({ graph }: { graph: Graph }) {
     setSelected(key);
   };
 
+  // Guided tour (#45): one cancellable transition per step. Each stop has a
+  // canonical shot, worked out once in order, so Back lands where Next did.
+  // The caption and highlight switch when the shot is reached; a stale or
+  // cancelled transition never runs on, and Close keeps the current shot.
+  const tourShotsRef = useRef<CameraKeyframe[] | null>(null);
   useEffect(() => {
-    if (tourStep === null) return;
-    const stop = TOUR[tourStep];
-    const scene = sceneRef.current!;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    if (tourStep === null) {
+      scene.setTour(false);
+      setShownStep(null);
+      tourShotsRef.current = null;
+      return;
+    }
+    scene.setTour(true);
+    pendingRef.current = null; // live follow resumes with the next new visitor, not an old one
+    if (!tourShotsRef.current) {
+      tourSelRef.current = selected;
+      const shots: CameraKeyframe[] = [];
+      for (const stop of TOUR) shots.push(scene.tourShot(stop, shots[shots.length - 1]));
+      tourShotsRef.current = shots;
+    }
+    const step = tourStep;
+    const stop = TOUR[step];
     const stopView = stop.view ?? 'graph';
-    const changing = stopView !== viewRef.current;
     setView(stopView);
-    scene.setView(stopView, 'tour');
-    setSelected(stop.select ?? null);
-    // A view change flies the camera itself; let it land before the stop's own move.
-    const id = setTimeout(
-      () => {
-        // Both kinds of stop fly as the tour, so a quick Next replaces either.
-        scene.select(stop.select ?? null, !stop.camera, { owner: 'tour' });
-        if (stop.camera) void scene.flyTo(stop.camera, 2000, 'tour');
-      },
-      changing ? 2300 : 0,
-    );
-    return () => clearTimeout(id);
+    let current = true;
+    void scene.tourFly(stopView, tourShotsRef.current[step]).then((r) => {
+      if (!current) return; // another step or Close took over
+      scene.select(stop.select ?? null, false);
+      tourSelRef.current = stop.select ?? null;
+      setSelected(stop.select ?? null);
+      setShownStep(step);
+      // Cancelled by a drag: show the stop, but leave the camera to the user.
+      if (r === 'done') scene.tourDrift(tourShotsRef.current?.[step + 1]);
+    });
+    return () => {
+      current = false;
+    };
+    // selected is read only to remember what to return to; only the step drives the tour.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tourStep]);
 
   const totals = useMemo(() => {
@@ -677,8 +705,11 @@ function Viewer({ graph }: { graph: Graph }) {
           <small>
             {tourStep + 1} / {TOUR.length}
           </small>
-          <h2>{TOUR[tourStep].title}</h2>
-          <p>{TOUR[tourStep].text}</p>
+          {/* The caption of the stop on screen; it dims while the camera travels to the next. */}
+          <div className={shownStep === tourStep ? 'tour-text' : 'tour-text moving'} aria-live="polite">
+            <h2>{TOUR[shownStep ?? tourStep].title}</h2>
+            <p>{TOUR[shownStep ?? tourStep].text}</p>
+          </div>
           <div className="row">
             <button disabled={tourStep === 0} onClick={() => setTourStep(tourStep - 1)}>
               ← Back

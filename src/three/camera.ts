@@ -199,6 +199,19 @@ export function framePlace(p: THREE.Vector3, reach: number, prevEye?: THREE.Vect
   return key(eyeWith(sideFor(out, eyeWith, prevEye)), out.multiplyScalar(DOME_R * 0.96));
 }
 
+/**
+ * Inside the dome, from the skin side: just inside the skin above `t`, looking
+ * in toward the centre, so `t` sits in the foreground with the inner shells and
+ * the wheel beyond. A run of these shots all look inward, so a camera moving
+ * between them never passes its own target.
+ */
+export function frameInward(t: THREE.Vector3, prevEye?: THREE.Vector3): CameraKeyframe {
+  const out = t.lengthSq() > 1e-6 ? t.clone().normalize() : new THREE.Vector3(0, 0, -1);
+  const r = Math.min(t.length() + 16, DOME_R * 0.86);
+  const eyeWith = (side: THREE.Vector3) => out.clone().multiplyScalar(r).addScaledVector(side, 5).addScaledVector(UP, 3);
+  return key(eyeWith(sideFor(out, eyeWith, prevEye)), t.clone().multiplyScalar(0.55));
+}
+
 /** A topic sits on the wheel: look across it from above, from the far side. */
 export function frameTopic(p: THREE.Vector3): CameraKeyframe {
   const d = new THREE.Vector3(p.x, 0, p.z);

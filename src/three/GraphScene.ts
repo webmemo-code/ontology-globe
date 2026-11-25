@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, hash } from './live';
-import { framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -34,6 +34,10 @@ const GRAPH_SPIN = 0.3;
 const SPIN_IDLE_MS = 4000;
 /** Live follow: between arrivals the camera circles the followed pair this fast (rad/s, ~1.1 deg/s). */
 const DRIFT_SPEED = 0.02;
+/** Tour drift at a stop: at most this far (rad, 8 deg), easing out over TOUR_DRIFT_S, so a long read ends in a settle. */
+const TOUR_DRIFT = (8 * Math.PI) / 180;
+const TOUR_DRIFT_S = 8;
+const UP = new THREE.Vector3(0, 1, 0);
 
 /** True borders on the same rotated globe, as line segments just inside the skin. */
 function borderSegments(geometry: Geometry, out: number[]) {
@@ -232,8 +236,14 @@ export class GraphScene {
   // SPIN_IDLE_MS after the last touch; never under reduced motion. `matches` is
   // live, so a change of the preference applies at once.
   private pressed = false;
-  /** Circling the followed pair (owner 'drift'); any flight, selection or touch ends it. */
-  private drifting = false;
+  /**
+   * Slow motion while nothing flies: 'pair' circles a followed live pair;
+   * 'tour' turns a little about the vertical through a tour stop's target,
+   * toward the next stop. Any flight, selection or touch ends it.
+   */
+  private drift: { kind: 'pair' } | { kind: 'tour'; sign: number; t0: number; applied: number } | null = null;
+  /** The guided tour owns the camera: no system spin, no live follow. */
+  private touring = false;
   private touchedAt = 0;
   private lastTick = 0;
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -263,7 +273,7 @@ export class GraphScene {
     this.controls.addEventListener('start', () => {
       // The user takes the camera: any flight in progress ends here, settled as cancelled.
       this.cancelFlight();
-      this.drifting = false;
+      this.drift = null;
       this.controls.autoRotate = false;
       this.atHome = false;
       this.touchedAt = performance.now();
@@ -675,8 +685,7 @@ export class GraphScene {
   }
 
   /** Entities and articles to keep lit for the current selection. */
-  private highlight(): { entities: Set<string>; posts: Set<string> } | null {
-    const sel = this.selected;
+  private highlight(sel = this.selected): { entities: Set<string>; posts: Set<string> } | null {
     if (!sel) return null;
     const post = this.postsByKey.get(sel);
     if (post) return { entities: new Set(post.entities), posts: new Set([sel]) };
@@ -1049,7 +1058,7 @@ export class GraphScene {
    */
   select(key: string | null, fly = true, { pair, owner = 'select' }: { pair?: string; owner?: CameraOwner } = {}) {
     this.selected = key;
-    if (key) this.drifting = false;
+    if (key) this.drift = null;
     this.applyStyle();
     this.refreshFocus();
     if (!fly) return;
@@ -1057,26 +1066,83 @@ export class GraphScene {
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
     if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
+    const shot = this.shotFor(key);
+    if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
+  }
+
+  /**
+   * Where the camera goes to show `key` in `view` (camera.ts), from the layout
+   * of that view, not the current morph, so a tour can work its shots out up
+   * front. `prevEye` picks the side, for shots that follow one another.
+   */
+  private shotFor(key: string, view: View = this.view, prevEye?: THREE.Vector3): CameraKeyframe | null {
+    const at = (k: string) => {
+      const p = this.layouts[view].get(k);
+      return p ? new THREE.Vector3(p.x, p.y, p.z) : null;
+    };
     const post = this.postsByKey.get(key);
-    if (post && this.view === 'graph') {
+    if (post && view === 'graph') {
       const c = this.articles.at(key);
-      if (!c) return;
-      // From inside, a dot is easy to miss: step outside instead (camera.ts).
-      const ents = post.entities.map((k) => this.views.get(k)?.base).filter(Boolean) as Vec3[];
-      return void this.flyTo(framePost(c, ents.map((e) => new THREE.Vector3(e.x, e.y, e.z))), 1900, owner);
+      // From inside, a dot is easy to miss: step outside instead.
+      return c ? framePost(c, post.entities.map(at).filter((e): e is THREE.Vector3 => !!e), prevEye) : null;
     }
     const v = this.views.get(key);
-    if (!v) return;
-    const p = v.base;
-    if (this.view === 'system') return void this.flyTo(kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]), 1600, owner);
-    const at = new THREE.Vector3(p.x, p.y, p.z);
-    if (v.node.class === 'places') return void this.flyTo(framePlace(at, v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45), 1800, owner);
-    if (v.node.class === 'topics') return void this.flyTo(frameTopic(at), 1800, owner);
+    const p = at(key);
+    if (!v || !p) return null;
+    if (view === 'system') return kf([p.x + 18, p.y + 10, p.z + 22], [p.x, p.y, p.z]);
+    if (v.node.class === 'places') return framePlace(p, v.node.depth === 0 ? 2.3 : v.node.type === 'Country' ? 1.9 : 1.45, prevEye);
+    if (v.node.class === 'topics') return frameTopic(p);
     // Inside the dome, behind the entity on the line from its articles. Not all of them fit, and need not.
-    const tiles = [...(this.highlight()?.posts ?? [])]
-      .map((k) => this.articles.at(k))
-      .filter((c): c is THREE.Vector3 => !!c);
-    void this.flyTo(frameInterior(at, tiles), 1800, owner);
+    const tiles = [...(this.highlight(key)?.posts ?? [])].map((k) => this.articles.at(k)).filter((c): c is THREE.Vector3 => !!c);
+    return frameInterior(p, tiles, prevEye);
+  }
+
+  // ---------- guided tour ----------
+
+  /** While on, the tour alone moves the camera. Off ends a tour flight and its drift where they are: Close keeps the shot. */
+  setTour(on: boolean) {
+    this.touring = on;
+    if (on) return;
+    if (this.flight?.owner === 'tour') this.cancelFlight();
+    if (this.drift?.kind === 'tour') this.drift = null;
+  }
+
+  /**
+   * A stop's canonical arrival shot: its authored camera, else the framing of
+   * its selection in the graph view, on the side nearer the previous stop's
+   * shot. The same every time, so Back lands where Next did.
+   */
+  tourShot(stop: { select?: string; camera?: CameraKeyframe; inside?: string }, prev?: CameraKeyframe): CameraKeyframe {
+    if (stop.camera) return stop.camera;
+    const eye = prev ? new THREE.Vector3(prev.position.x, prev.position.y, prev.position.z) : undefined;
+    const inner = stop.inside && this.layouts.graph.get(stop.inside);
+    if (inner) return frameInward(new THREE.Vector3(inner.x, inner.y, inner.z), eye);
+    return (stop.select && this.shotFor(stop.select, 'graph', eye)) || this.homes.graph;
+  }
+
+  /**
+   * One tour transition: switch the view without its own flight home and fly
+   * straight to the shot, so there is no join to stop at. A view change swings
+   * round the centre (orbit) while the layout morphs: the shots on either side
+   * face different ways, and a straight line would pass through its target.
+   * Reduced motion: a cut.
+   */
+  tourFly(view: View, shot: CameraKeyframe): Promise<FlightResult> {
+    const changing = view !== this.view;
+    this.setView(view, 'tour', false);
+    return this.flyTo(shot, this.reduced.matches ? 1 : changing ? 2200 : 2000, 'tour', changing ? 'orbit' : undefined);
+  }
+
+  /** Drift at a tour stop, turning toward the next stop's eye; none under reduced motion. */
+  tourDrift(next?: CameraKeyframe) {
+    if (this.reduced.matches) return;
+    let sign = 1;
+    if (next) {
+      const q = this.camera.position.clone().sub(this.controls.target);
+      const n = new THREE.Vector3(next.position.x, next.position.y, next.position.z).sub(this.controls.target);
+      sign = new THREE.Vector3().crossVectors(q, n).y < 0 ? -1 : 1;
+    }
+    this.drift = { kind: 'tour', sign, t0: this.clock.getElapsedTime(), applied: 0 };
   }
 
   /**
@@ -1090,14 +1156,14 @@ export class GraphScene {
   followPair(row: string): 'started' | 'busy' | 'none' {
     // touchedAt starts at 0: only a real touch counts, not the first seconds after load.
     const touched = this.touchedAt > 0 && performance.now() - this.touchedAt < SPIN_IDLE_MS;
-    if (this.view !== 'graph' || this.selected || this.pressed || touched) return 'busy';
+    if (this.view !== 'graph' || this.touring || this.selected || this.pressed || touched) return 'busy';
     if (this.flight && outranks(this.flight.owner, 'follow')) return 'busy';
     const path = this.live.pathOf(row);
     if (!path) return 'none';
     const reduced = this.reduced.matches;
     const shot = framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key;
     void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
-      if (r === 'done' && !reduced) this.drifting = true;
+      if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
     return 'started';
   }
@@ -1105,7 +1171,7 @@ export class GraphScene {
   /** Follow switched off: end a follow flight and the drift where they are; other flights carry on. */
   stopFollow() {
     if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
-    this.drifting = false;
+    if (this.drift?.kind === 'pair') this.drift = null;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
@@ -1126,15 +1192,15 @@ export class GraphScene {
    * or a later flight takes over; a flight cannot replace one with a higher
    * owner (camera.ts), and is then cancelled at once.
    */
-  flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select'): Promise<FlightResult> {
+  flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select', path?: PathPolicy): Promise<FlightResult> {
     if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('cancelled');
     this.cancelFlight();
-    this.drifting = false;
+    this.drift = null;
     this.controls.autoRotate = false;
     if (to !== this.homes[this.view]) this.atHome = false;
     const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };
     return new Promise((done) => {
-      this.flight = { from, to, t0: performance.now(), ms, owner, path: pathPolicy(from, to, this.view === 'graph'), done };
+      this.flight = { from, to, t0: performance.now(), ms, owner, path: path ?? pathPolicy(from, to, this.view === 'graph'), done };
     });
   }
 
@@ -1206,7 +1272,7 @@ export class GraphScene {
   }
 
   /** Switch views; the camera flies home as `owner` (the tour passes 'tour'). */
-  setView(view: View, owner: CameraOwner = 'select') {
+  setView(view: View, owner: CameraOwner = 'select', fly = true) {
     if (view === this.view) return;
     this.view = view;
     this.controls.autoRotateSpeed = view === 'system' ? SYSTEM_SPIN : GRAPH_SPIN;
@@ -1215,7 +1281,7 @@ export class GraphScene {
     this.showViewDecor();
     this.focusLinks.clear();
     this.applyStyle();
-    this.flyHome(2200, owner);
+    if (fly) this.flyHome(2200, owner);
   }
 
   getCamera(): CameraKeyframe {
@@ -1387,12 +1453,22 @@ export class GraphScene {
     const dt = Math.min(0.1, t - this.lastTick);
     this.lastTick = t;
     if (this.view === 'system')
-      this.controls.autoRotate = !this.reduced.matches && !this.flight && !this.pressed && !this.hovered && !this.selected && performance.now() - this.touchedAt > SPIN_IDLE_MS;
+      this.controls.autoRotate = !this.reduced.matches && !this.touring && !this.flight && !this.pressed && !this.hovered && !this.selected && performance.now() - this.touchedAt > SPIN_IDLE_MS;
     // Drift: turn the eye about the line from the globe centre through the
     // target, so its distance from the centre never changes and it cannot dip
     // into the globe; the pair stays in the middle of the frame.
-    if (this.drifting && !this.flight && this.view === 'graph' && this.controls.target.lengthSq() > 1)
-      this.camera.position.applyAxisAngle(this.tmp.copy(this.controls.target).normalize(), DRIFT_SPEED * dt);
+    const d = this.drift;
+    if (d && !this.flight && !this.reduced.matches) {
+      if (d.kind === 'pair' && this.view === 'graph' && this.controls.target.lengthSq() > 1)
+        this.camera.position.applyAxisAngle(this.tmp.copy(this.controls.target).normalize(), DRIFT_SPEED * dt);
+      if (d.kind === 'tour') {
+        // About the vertical through the target, bounded and easing out.
+        const a = TOUR_DRIFT * (1 - Math.exp(-(t - d.t0) / TOUR_DRIFT_S));
+        const q = this.tmp.copy(this.camera.position).sub(this.controls.target).applyAxisAngle(UP, d.sign * (a - d.applied));
+        d.applied = a;
+        this.camera.position.copy(this.controls.target).add(q);
+      }
+    }
     this.controls.update(this.view === 'system' ? dt : undefined);
     const { clientWidth: w, clientHeight: h } = this.container;
     // Labels anchor to the interior entity shells, not the geographic surface.
