@@ -5,6 +5,35 @@ export type ReadingRow = {
   id: string; kind: 'reader' | 'bot'; site: SiteKey; who: string; what: string; pick: string | null;
   tier?: BotTier; route?: string;
 };
+const REGION_NAMES = (() => {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' });
+  } catch {
+    return null; // very old browsers: codes stay
+  }
+})();
+
+/**
+ * Where a reader is, for the Now reading rows (#49): the country's English
+ * name ("Germany", "Hamburg · Germany"). Swiss rows keep the short code
+ * ("Bern · CH"): nearly all of them carry a city, and CH reads at a glance.
+ */
+export function readerPlace(country: string, city: string): string {
+  const cc = country.toUpperCase();
+  let name = cc;
+  if (cc !== 'CH') {
+    try {
+      const full = REGION_NAMES?.of(cc);
+      // ZZ is the code for "unknown region": the code says as much, and is shorter.
+      if (full && cc !== 'ZZ') name = full;
+    } catch {
+      name = cc; // not a valid region code
+    }
+  }
+  // City-states read once: "Singapore", not "Singapore · Singapore".
+  return city && city.toLowerCase() !== name.toLowerCase() ? `${city} · ${name}` : name;
+}
+
 export const TIER_LABELS: Record<BotTier, string> = { training: 'training', search: 'search', user: 'for a user', other: 'other' };
 const ROUTE_LABELS: Record<string, string> = { okf: 'OKF', ontology: 'EntityMap', llms: 'llms.txt', 'llms.txt': 'llms.txt', jsonld: 'JSON-LD' };
 export const routeLabel = (route?: string) => (route ? (ROUTE_LABELS[route] ?? route) : '');
