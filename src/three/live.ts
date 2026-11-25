@@ -157,7 +157,7 @@ export class LiveLayer {
   /** Rendered curve per reading-list row id (see App's `reading`): reader arcs as drawn. */
   private readerPaths = new Map<string, THREE.Vector3[]>();
   /** Bot rows: the satellite and what it beams to; the freshest fetch per row wins, as in the list. */
-  private botPaths = new Map<string, { sat: Satellite; at: THREE.Vector3; interior: boolean; ago: number }>();
+  private botPaths = new Map<string, { sat: Satellite; at: THREE.Vector3; interior: boolean; ago: number; entity?: string }>();
 
   private labels: Labels;
 
@@ -184,7 +184,7 @@ export class LiveLayer {
         if (at) sat.targets.push({ at, fresh: 1 - (0.7 * Math.min(b.seconds_ago, WINDOW_S)) / WINDOW_S });
         const row = `b:${site}:${b.bot}:${b.route}:${b.post ?? b.entity}`;
         const have = this.botPaths.get(row);
-        if (at && (!have || b.seconds_ago < have.ago)) this.botPaths.set(row, { sat, at, interior: b.kind === 'entity', ago: b.seconds_ago });
+        if (at && (!have || b.seconds_ago < have.ago)) this.botPaths.set(row, { sat, at, interior: b.kind === 'entity', ago: b.seconds_ago, entity: b.entity });
         if (at && b.kind === 'post') this.mark(`${site}:${b.post}`, at, color, ctx.name({ site, post: b.post }));
         if (at && b.kind === 'entity' && !this.entityHits.has(b.entity!)) {
           this.entityHits.set(b.entity!, color);
@@ -215,13 +215,13 @@ export class LiveLayer {
   }
 
   /** A row's rendered origin -> destination curve, origin first; null when the row draws nothing. */
-  pathOf(row: string): { points: THREE.Vector3[]; interior: boolean } | null {
+  pathOf(row: string): { points: THREE.Vector3[]; interior: boolean; entity?: string } | null {
     const arc = this.readerPaths.get(row);
     if (arc) return { points: arc, interior: false };
     const b = this.botPaths.get(row);
     if (!b) return null;
     // The beam is straight, from the satellite's anchor (it hovers only ~1% off it).
-    return { points: Array.from({ length: 17 }, (_, i) => b.sat.anchor.clone().lerp(b.at, i / 16)), interior: b.interior };
+    return { points: Array.from({ length: 17 }, (_, i) => b.sat.anchor.clone().lerp(b.at, i / 16)), interior: b.interior, entity: b.entity };
   }
 
   private addReader(site: SiteKey, country: string, city: string, post: number | null, ctx: LiveContext, row: string) {

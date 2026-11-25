@@ -158,11 +158,23 @@ describe('frameBeamInside', () => {
   for (const [name, aspect] of Object.entries(ASPECTS))
     cases.forEach(({ sat, entity }, i) => {
       it(`keeps satellite and cylinder in frame from inside, case ${i + 1} on ${name}`, () => {
-        const k = frameBeamInside(sat, entity);
+        const k = frameBeamInside(sat, entity, tans(aspect));
         expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
         const at = shoot(k, aspect);
         expect(at(entity).inFrame).toBe(true);
         expect(at(sat).inFrame).toBe(true);
       });
+    });
+
+  // #55 review: a destination on the outer sight shell with the satellite
+  // across the globe. Keeping the eye inside used to put the destination
+  // behind the camera; now it falls back to the destination alone, in front.
+  for (const [name, aspect] of Object.entries(ASPECTS))
+    it(`keeps a far-side destination on the outer shell in front of the camera on ${name}`, () => {
+      const dest = new THREE.Vector3(0, 0, 52);
+      const sat = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(150)).multiplyScalar(93);
+      const k = frameBeamInside(sat, dest, tans(aspect));
+      expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
+      expect(shoot(k, aspect)(dest).inFrame).toBe(true);
     });
 });
