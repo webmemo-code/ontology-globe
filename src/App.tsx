@@ -367,7 +367,8 @@ function Viewer({ graph }: { graph: Graph }) {
     setView(stopView);
     let current = true;
     void scene.tourFly(stopView, tourShotsRef.current[step]).then((r) => {
-      if (!current) return; // another step or Close took over
+      // Another step or Close took over; or the shot never started, so it was not reached.
+      if (!current || r === 'refused') return;
       scene.select(stop.select ?? null, false);
       tourSelRef.current = stop.select ?? null;
       setSelected(stop.select ?? null);

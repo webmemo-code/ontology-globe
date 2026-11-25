@@ -31,8 +31,12 @@ export type CameraOwner = 'drift' | 'follow' | 'tour' | 'select' | 'user';
 const RANK: Record<CameraOwner, number> = { drift: 0, follow: 1, tour: 2, select: 3, user: 4 };
 export const outranks = (a: CameraOwner, b: CameraOwner) => RANK[a] > RANK[b];
 
-/** How a flight ended: it landed, or another flight (or the user) took over. */
-export type FlightResult = 'done' | 'cancelled';
+/**
+ * How a flight ended: it landed ('done'), another flight or the user took over
+ * while it flew ('cancelled'), or it never started because a higher owner's
+ * flight was running ('refused'). Only 'done' means the camera got there.
+ */
+export type FlightResult = 'done' | 'cancelled' | 'refused';
 
 // ---------- flight paths ----------
 

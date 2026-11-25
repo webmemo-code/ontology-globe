@@ -1129,6 +1129,9 @@ export class GraphScene {
    */
   tourFly(view: View, shot: CameraKeyframe): Promise<FlightResult> {
     const changing = view !== this.view;
+    // Every tour step is a click (start, Next, Back): it takes over whatever
+    // flies, a selection's flight included, so its shot always starts.
+    this.cancelFlight();
     this.setView(view, 'tour', false);
     return this.flyTo(shot, this.reduced.matches ? 1 : changing ? 2200 : 2000, 'tour', changing ? 'orbit' : undefined);
   }
@@ -1190,10 +1193,10 @@ export class GraphScene {
   /**
    * Fly to a keyframe. Resolves 'done' on landing, or 'cancelled' when the user
    * or a later flight takes over; a flight cannot replace one with a higher
-   * owner (camera.ts), and is then cancelled at once.
+   * owner (camera.ts), and then resolves 'refused' without moving.
    */
   flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select', path?: PathPolicy): Promise<FlightResult> {
-    if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('cancelled');
+    if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('refused');
     this.cancelFlight();
     this.drift = null;
     this.controls.autoRotate = false;
@@ -1277,7 +1280,8 @@ export class GraphScene {
     this.view = view;
     this.controls.autoRotateSpeed = view === 'system' ? SYSTEM_SPIN : GRAPH_SPIN;
     const from = new Map([...this.views.values()].map((v) => [v.key, { ...v.base }]));
-    this.morph = { from, t0: performance.now(), ms: 2200 };
+    // Reduced motion: the layout cuts with the camera instead of morphing.
+    this.morph = { from, t0: performance.now(), ms: this.reduced.matches ? 1 : 2200 };
     this.showViewDecor();
     this.focusLinks.clear();
     this.applyStyle();
