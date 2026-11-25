@@ -10,7 +10,7 @@ import { AgentsPanel } from './hud/AgentsPanel';
 import { ReadersPanel, ReadersStrip, ReadingPanel } from './hud/ReadersPanel';
 import { ServedStrip } from './hud/ServedStrip';
 import { TopBar } from './hud/TopBar';
-import { demoHistory, liveStats, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
+import { demoHistory, liveStats, readerPlace, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
 import { useMedia } from './hud/useMedia';
 import { nextFollow, stillListed, type Baseline } from './hud/follow';
 import { READER_COLOR, TIER_COLORS } from './three/live';
@@ -226,7 +226,7 @@ function Viewer({ graph }: { graph: Graph }) {
     for (const [site, snap] of scoped)
       for (const r of snap.readers) {
         const p = r.post ? posts.get(`post:${site}:${r.post}`) : undefined;
-        if (p) push(readers, { id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: r.city ? `${r.city} · ${r.country}` : r.country, what: titleOf(p), pick: postKey(p) });
+        if (p) push(readers, { id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: readerPlace(r.country, r.city), what: titleOf(p), pick: postKey(p) });
       }
     const fetches = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
     for (const { site, b } of fetches) {
