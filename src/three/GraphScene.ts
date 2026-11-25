@@ -499,6 +499,7 @@ export class GraphScene {
   // ---------- styling ----------
 
   setMode(mode: SiteMode) {
+    this.followFocus = null; // applyStyle below restyles every emblem
     this.mode = mode;
     this.articles.setMode(mode);
     this.applyStyle();
@@ -1240,6 +1241,9 @@ export class GraphScene {
     if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('refused');
     this.cancelFlight();
     this.drift = null;
+    // Any flight but live follow's leaves the followed shot: Reset view, a
+    // selection, the tour, a blog switch flying home. Its emblem fade goes too.
+    if (owner !== 'follow' && this.followFocus) this.setFollowFocus(null);
     this.controls.autoRotate = false;
     if (to !== this.homes[this.view]) this.atHome = false;
     const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };
