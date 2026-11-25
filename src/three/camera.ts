@@ -102,8 +102,6 @@ export interface FrameOpts {
   eye?: THREE.Vector3;
   /** Share of the free rectangle kept empty at its edges. */
   margin?: number;
-  /** The destination sits inside the dome (an entity): the skin is translucent, so it is not tested for visibility. */
-  interiorEnd?: boolean;
 }
 
 export interface PairFrame {
@@ -153,9 +151,51 @@ export function framePair(points: THREE.Vector3[], o: FrameOpts): PairFrame {
   // Stay above the country bars, as high as an article shot (framePost), however short the hop.
   while (target.clone().addScaledVector(dir, dist).length() < DOME_R * 1.75) dist += 1;
   const eye = target.clone().addScaledVector(dir, dist);
-  const tested = o.interiorEnd ? points.filter((p) => p.length() >= DOME_R * 0.99) : points;
-  if (tested.every((p) => visibleFrom(eye, p))) return { key: key(eye, target), full: true };
+  if (points.every((p) => visibleFrom(eye, p))) return { key: key(eye, target), full: true };
   return { key: frameDestination(from, to), full: false };
+}
+
+/**
+ * An AI agent fetching an entity inside the dome (#54): step inside, just
+ * behind the entity, and look along the beam toward the agent's satellite, a
+ * little off to one side so the beam reads as a diagonal. The cylinder sits in
+ * the foreground, the satellite beyond the translucent skin. The eye stays
+ * clear of the skin, as in frameInterior.
+ */
+export function frameBeamInside(origin: THREE.Vector3, dest: THREE.Vector3, o: FrameOpts): CameraKeyframe {
+  const prevEye = o.eye;
+  const dir = origin.clone().sub(dest);
+  if (dir.lengthSq() < 1e-6) dir.copy(dest.lengthSq() > 1e-6 ? dest : new THREE.Vector3(0, 0, -1));
+  dir.normalize();
+  const eyeWith = (side: THREE.Vector3) => {
+    const eye = dest.clone().addScaledVector(dir, -18).addScaledVector(side, 7).addScaledVector(UP, 3);
+    return eye.length() > DOME_R * 0.82 ? eye.setLength(DOME_R * 0.82) : eye;
+  };
+  // Aim past the entity toward where the beam leaves the dome, so the cylinder
+  // sits low in the frame and the satellite high.
+  const b = dest.dot(dir);
+  const exit = dest.clone().addScaledVector(dir, -b + Math.sqrt(Math.max(0, b * b - dest.lengthSq() + DOME_R * DOME_R)));
+  const eye = eyeWith(sideFor(dir, eyeWith, prevEye));
+  const target = dest.clone().lerp(exit, 0.35);
+  if (inView(eye, target, dest, o) && inView(eye, target, origin, o)) return key(eye, target);
+  // Keeping the eye inside can carry it past a destination near the skin when
+  // the satellite is across the globe (#55 review). Then show the destination
+  // alone, from its centre side, looking out at it.
+  const out = dest.lengthSq() > 1e-6 ? dest.clone().normalize() : new THREE.Vector3(0, 0, -1);
+  const back = out.clone().multiplyScalar(Math.max(0, dest.length() - 22)).addScaledVector(perpendicular(out), 6).addScaledVector(UP, 3);
+  return key(back, dest.clone());
+}
+
+/** Whether `p` lies in front of a camera at `eye` looking at `target`, inside the free rectangle (10% margin). */
+function inView(eye: THREE.Vector3, target: THREE.Vector3, p: THREE.Vector3, o: FrameOpts): boolean {
+  const f = target.clone().sub(eye).normalize();
+  const right = new THREE.Vector3().crossVectors(f, UP);
+  if (right.lengthSq() < 1e-6) right.copy(perpendicular(f));
+  right.normalize();
+  const up = new THREE.Vector3().crossVectors(right, f);
+  const q = p.clone().sub(eye);
+  const depth = q.dot(f);
+  return depth > 1 && Math.abs(q.dot(right)) <= o.tanH * 0.9 * depth && Math.abs(q.dot(up)) <= o.tanV * 0.9 * depth;
 }
 
 /** The destination from outside, 35 degrees away from the origin's side. */

@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, hash } from './live';
-import { frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { frameBeamInside, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -246,6 +246,8 @@ export class GraphScene {
   private drift: { kind: 'pair' } | { kind: 'tour'; sign: number; t0: number; applied: number } | null = null;
   /** The guided tour owns the camera: no system spin, no live follow. */
   private touring = false;
+  /** The entity an inside follow shot is about (#54): like a selection, it fades the other emblems. */
+  private followFocus: string | null = null;
   private touchedAt = 0;
   private lastTick = 0;
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -276,6 +278,7 @@ export class GraphScene {
       // The user takes the camera: any flight in progress ends here, settled as cancelled.
       this.cancelFlight();
       this.drift = null;
+      if (this.followFocus) this.setFollowFocus(null); // the user looks around: every emblem back
       this.controls.autoRotate = false;
       this.atHome = false;
       this.touchedAt = performance.now();
@@ -496,6 +499,7 @@ export class GraphScene {
   // ---------- styling ----------
 
   setMode(mode: SiteMode) {
+    this.followFocus = null; // applyStyle below restyles every emblem
     this.mode = mode;
     this.articles.setMode(mode);
     this.applyStyle();
@@ -506,6 +510,7 @@ export class GraphScene {
   /** Live readers and AI agents (null clears the layer). */
   setLive(data: LiveBySite | null) {
     this.liveData = data;
+    if (!data) this.setFollowFocus(null);
     this.refreshLive();
   }
 
@@ -754,7 +759,11 @@ export class GraphScene {
       const f = this.view === 'system' ? 1.3 : person ? 3.4 : Math.max(2.2, b.size * (node.type === 'Country' ? 1.05 : node.class === 'places' ? 1.25 : 1.5));
       b.face.scale.set(f * (b.face.userData.aspect ?? 1), f, 1);
       // Emblems stay a little see-through; an orphan's flag or logo fades like its outline would.
-      L.face = dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;
+      // With one entity in focus (selected, or an inside follow shot), every other
+      // flag, logo and face steps back, so a crowded shot reads (#54).
+      const focus = this.selected ?? this.followFocus;
+      const other = !!focus && focus !== node.key;
+      L.face = other ? 0.12 : dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;
       L.faceTint.copy(person ? FACE_TINT.person : FACE_TINT.emblem);
       L.ghostFace = Math.min(L.face, GHOST_FACE);
     }
@@ -1079,7 +1088,7 @@ export class GraphScene {
     // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key, 1900, owner);
+    if (path) return void this.flyTo(this.pairShot(path), 1900, owner);
     const shot = this.shotFor(key);
     if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
   }
@@ -1178,17 +1187,36 @@ export class GraphScene {
     const path = this.live.pathOf(row);
     if (!path) return 'none';
     const reduced = this.reduced.matches;
-    const shot = framePair(path.points, { ...this.frameTans(), eye: this.camera.position, interiorEnd: path.interior }).key;
+    const shot = this.pairShot(path);
+    this.setFollowFocus(path.interior ? path.entity ?? null : null);
     void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
       if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
     return 'started';
   }
 
+  private setFollowFocus(key: string | null) {
+    if (key === this.followFocus) return;
+    this.followFocus = key;
+    this.applyStyle();
+  }
+
   /** Follow switched off: end a follow flight and the drift where they are; other flights carry on. */
   stopFollow() {
+    this.setFollowFocus(null);
     if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
     if (this.drift?.kind === 'pair') this.drift = null;
+  }
+
+  /**
+   * The shot for a live row: an agent fetching an entity inside the dome is
+   * framed from inside, along its beam (#54); everything else, readers and
+   * article fetches, from outside (framePair).
+   */
+  private pairShot(path: { points: THREE.Vector3[]; interior: boolean }): CameraKeyframe {
+    const eye = this.camera.position;
+    if (path.interior) return frameBeamInside(path.points[0], path.points[path.points.length - 1], { ...this.frameTans(), eye });
+    return framePair(path.points, { ...this.frameTans(), eye }).key;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
@@ -1213,6 +1241,9 @@ export class GraphScene {
     if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('refused');
     this.cancelFlight();
     this.drift = null;
+    // Any flight but live follow's leaves the followed shot: Reset view, a
+    // selection, the tour, a blog switch flying home. Its emblem fade goes too.
+    if (owner !== 'follow' && this.followFocus) this.setFollowFocus(null);
     this.controls.autoRotate = false;
     if (to !== this.homes[this.view]) this.atHome = false;
     const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };

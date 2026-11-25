@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { frameBeamInside, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -67,12 +67,6 @@ describe('framePair', () => {
     expect(new THREE.Vector3(a.x, a.y, a.z).distanceTo(new THREE.Vector3(b.x, b.y, b.z))).toBeGreaterThan(1);
   });
 
-  it('does not test an interior destination for visibility', () => {
-    const sat = new THREE.Vector3(0, 0.6, -1).normalize().multiplyScalar(DOME_R * 1.5);
-    const entity = new THREE.Vector3(0, 5, -20);
-    const points = Array.from({ length: 17 }, (_, i) => sat.clone().lerp(entity, i / 16));
-    expect(framePair(points, { ...tans(ASPECTS.desktop), interiorEnd: true }).key).toBeTruthy();
-  });
 });
 
 describe('pathAt', () => {
@@ -151,4 +145,36 @@ describe('frameInward', () => {
       expect(position.distanceTo(target)).toBeGreaterThan(5);
     }
   });
+});
+
+describe('frameBeamInside', () => {
+  // An agent fetching an entity (#54): the camera goes inside, and both the
+  // satellite and the cylinder are in frame.
+  const cases = [
+    { sat: new THREE.Vector3(0.1, 0.6, -1).normalize().multiplyScalar(DOME_R * 1.55), entity: new THREE.Vector3(-2, 4, -28) },
+    { sat: new THREE.Vector3(-0.8, 0.3, 0.5).normalize().multiplyScalar(DOME_R * 1.3), entity: new THREE.Vector3(6, -3, -40) },
+    { sat: new THREE.Vector3(0, 1, 0).multiplyScalar(DOME_R * 1.65), entity: new THREE.Vector3(1, 2, 3) },
+  ];
+  for (const [name, aspect] of Object.entries(ASPECTS))
+    cases.forEach(({ sat, entity }, i) => {
+      it(`keeps satellite and cylinder in frame from inside, case ${i + 1} on ${name}`, () => {
+        const k = frameBeamInside(sat, entity, tans(aspect));
+        expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
+        const at = shoot(k, aspect);
+        expect(at(entity).inFrame).toBe(true);
+        expect(at(sat).inFrame).toBe(true);
+      });
+    });
+
+  // #55 review: a destination on the outer sight shell with the satellite
+  // across the globe. Keeping the eye inside used to put the destination
+  // behind the camera; now it falls back to the destination alone, in front.
+  for (const [name, aspect] of Object.entries(ASPECTS))
+    it(`keeps a far-side destination on the outer shell in front of the camera on ${name}`, () => {
+      const dest = new THREE.Vector3(0, 0, 52);
+      const sat = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(150)).multiplyScalar(93);
+      const k = frameBeamInside(sat, dest, tans(aspect));
+      expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
+      expect(shoot(k, aspect)(dest).inFrame).toBe(true);
+    });
 });
