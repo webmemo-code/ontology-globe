@@ -63,19 +63,24 @@ served; the globe is framed between them.
 
 - **Readers** of the last 30 minutes glow at their city, with a flowing line to
   the article they read (GA4 Realtime): solid orange for Travelmemo, dashed
-  orange for Reisememo.
+  orange for Reisememo. The Now reading panel names their country in full
+  ("Hamburg · Germany"); Swiss readers keep the short code ("Bern · CH").
 - **AI agents** are satellites coloured by purpose (training, search, on a
   user's behalf). Each hovers over the country its request came from
   (Cloudflare on Travelmemo, IPinfo Lite on Reisememo) and beams to the article
   or entity it fetched. When the country is unknown it hovers over the
   operator's headquarters instead. Agents on article pages are not seen,
-  because the page cache serves those without PHP.
+  because the page cache serves those without PHP. Each satellite and each row
+  in the AI agents panel carries the company's site icon
+  (`node scripts/fetch-bot-icons.mjs` refreshes them), and a row's blue EN or
+  grey DE chip says which blog was fetched.
 - **Follow** (in the Now reading header, on by default): the feed is checked
   every 30 seconds, and the camera flies to each newly seen reader or agent so
   their location and destination are both in view (just the destination when
   the arc runs behind the globe), then circles it slowly until the next one.
-  Dragging, selecting or the tour takes over; clicking any row frames its pair
-  the same way.
+  An agent fetching an entity is shown from inside the globe, along its beam,
+  with every other flag and logo faded. Dragging, selecting or the tour takes
+  over; clicking any row frames its pair the same way.
 
 ## On a phone
 
