@@ -1,0 +1,19 @@
+#!/bin/sh
+# Direct pushes to main may only touch README.md and TODO.md; everything else goes
+# through a feature branch and PR. GitHub's ruleset can't scope its admin bypass by
+# path, so this hook enforces the docs-only exception locally.
+# Enable once per clone:  git config core.hooksPath scripts/hooks
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$remote_ref" = "refs/heads/main" ] || continue
+  [ "$local_sha" = "$zero" ] && { echo "pre-push: deleting main is not allowed" >&2; exit 1; }
+  [ "$remote_sha" = "$zero" ] && remote_sha=$(git hash-object -t tree /dev/null)
+  bad=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null | grep -v -x -e README.md -e TODO.md)
+  if [ -n "$bad" ]; then
+    echo "pre-push: direct pushes to main may only change README.md or TODO.md." >&2
+    echo "Use a feature branch and PR for:" >&2
+    echo "$bad" | sed 's/^/  /' >&2
+    exit 1
+  fi
+done
+exit 0
