@@ -262,15 +262,18 @@ export class LiveLayer {
     if (!centre) return;
     const d = at ? domeDirection(at[0], at[1]) : domeDirection(centre[0] + (j - 0.5) * 3, centre[1] + (hash(cityKey + country) - 0.5) * 4);
     const from = new THREE.Vector3(...d).multiplyScalar(DOME_R * 1.015);
-    // One dot per city: further readers there only grow it (drawDots).
-    const key = `${country}:${cityKey}`;
-    const seat = this.seats.get(key);
-    if (seat) seat.n++;
-    else this.seats.set(key, { at: from, n: 1, phase: j * Math.PI * 2 });
+    // A reader on a page that is no article (home, category: post null), or on
+    // one the globe cannot place, gets no ring: every origin ring has its line,
+    // as every Now reading row has its article.
     if (!post) return;
     // The arc and the ring land where the article is set, not on its cartogram tile.
     const to = ctx.destination(site, post) ?? ctx.tile(site, post);
     if (!to) return;
+    // One ring per city: further readers there only grow it (drawDots).
+    const key = `${country}:${cityKey}`;
+    const seat = this.seats.get(key);
+    if (seat) seat.n++;
+    else this.seats.set(key, { at: from, n: 1, phase: j * Math.PI * 2 });
     // Arc over the skin (arc.ts); a local read draws a low hop and a small ring.
     const { curve, local } = readerArc(from, to);
     this.mark(`${site}:${post}`, to, READER_RING_COLORS[site], ctx.name({ site, post }), local, true);
