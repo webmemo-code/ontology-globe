@@ -155,96 +155,30 @@ export function framePair(points: THREE.Vector3[], o: FrameOpts): PairFrame {
   return { key: frameDestination(from, to), full: false };
 }
 
-/** Something in the scene the camera should keep clear of: a bounding sphere. */
-export interface Obstacle {
-  centre: THREE.Vector3;
-  radius: number;
-}
-
-/** Clearance the inside agent shot keeps from the SURFACE of any other entity (#68, B2). */
-export const BEAM_CLEARANCE = 6;
-
 /**
- * An AI agent fetching an entity inside the dome (#54): step inside, just
- * behind the entity, and look along the beam toward the agent's satellite, a
- * little off to one side so the beam reads as a diagonal. The cylinder sits in
- * the foreground, the satellite beyond the translucent skin. The eye stays
- * clear of the skin, as in frameInterior.
- *
- * #68 (B2): the eye also keeps BEAM_CLEARANCE from the surface of every other
- * entity (`obstacles`, bounding spheres of the entities near the shot).
- * Candidates: the preferred side, pulled back along the beam step by step,
- * then the other side. Both endpoints in frame (positive depth, inside the
- * HUD's free rectangle) is a hard constraint. Among the framed, clear
- * candidates, the one with the fewest entities between the eye and the
- * destination wins (in a dense country none may be free of them; the step-back
- * fade, B1, keeps those see-through). Without a clear one, the framed one with
- * the most clearance; without any framed one, the destination alone, as before.
+ * An AI agent fetching an entity inside the dome, framed from outside (live
+ * view stays outside): the beam from the satellite down to where it enters the
+ * skin. The entity itself sits inside, behind the skin, so the entry point
+ * stands in for it.
  */
-export function frameBeamInside(origin: THREE.Vector3, dest: THREE.Vector3, o: FrameOpts, obstacles: Obstacle[] = []): CameraKeyframe {
-  const prevEye = o.eye;
-  const dir = origin.clone().sub(dest);
-  if (dir.lengthSq() < 1e-6) dir.copy(dest.lengthSq() > 1e-6 ? dest : new THREE.Vector3(0, 0, -1));
-  dir.normalize();
-  const eyeAt = (side: THREE.Vector3, back: number) => {
-    const eye = dest.clone().addScaledVector(dir, -back).addScaledVector(side, 7).addScaledVector(UP, 3);
-    return eye.length() > DOME_R * 0.82 ? eye.setLength(DOME_R * 0.82) : eye;
-  };
-  // Aim past the entity toward where the beam leaves the dome, so the cylinder
-  // sits low in the frame and the satellite high.
-  const b = dest.dot(dir);
-  const exit = dest.clone().addScaledVector(dir, -b + Math.sqrt(Math.max(0, b * b - dest.lengthSq() + DOME_R * DOME_R)));
-  const target = dest.clone().lerp(exit, 0.35);
-  const first = sideFor(dir, (side) => eyeAt(side, 18), prevEye);
-  let clear: { eye: THREE.Vector3; covers: number } | null = null;
-  let closest: { eye: THREE.Vector3; gap: number } | null = null;
-  for (const side of [first, first.clone().negate()])
-    for (const back of [18, 22, 26, 30, 34]) {
-      const eye = eyeAt(side, back);
-      if (!inView(eye, target, dest, o) || !inView(eye, target, origin, o)) continue;
-      const { gap, covers } = clearance(eye, dest, obstacles);
-      if (gap >= BEAM_CLEARANCE) {
-        if (!clear || covers < clear.covers) clear = { eye, covers };
-      } else if (!closest || gap > closest.gap) closest = { eye, gap };
+export function beamToSkin(points: THREE.Vector3[], r = DOME_R): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (p.length() >= r) {
+      out.push(p.clone());
+      continue;
     }
-  const pick = clear ?? closest;
-  if (pick) return key(pick.eye, target);
-  // Keeping the eye inside can carry it past a destination near the skin when
-  // the satellite is across the globe (#55 review). Then show the destination
-  // alone, from its centre side, looking out at it.
-  const out = dest.lengthSq() > 1e-6 ? dest.clone().normalize() : new THREE.Vector3(0, 0, -1);
-  const back = out.clone().multiplyScalar(Math.max(0, dest.length() - 22)).addScaledVector(perpendicular(out), 6).addScaledVector(UP, 3);
-  return key(back, dest.clone());
-}
-
-/**
- * `gap`: the smallest distance from the eye to any obstacle's surface.
- * `covers`: how many obstacles sit between the eye and `dest`.
- */
-export function clearance(eye: THREE.Vector3, dest: THREE.Vector3, obstacles: Obstacle[]): { gap: number; covers: number } {
-  let gap = Infinity;
-  let covers = 0;
-  const seg = dest.clone().sub(eye);
-  const len2 = Math.max(seg.lengthSq(), 1e-6);
-  for (const { centre, radius } of obstacles) {
-    gap = Math.min(gap, eye.distanceTo(centre) - radius);
-    // Nearest point of the eye-to-entity segment, short of the entity itself.
-    const t = THREE.MathUtils.clamp(centre.clone().sub(eye).dot(seg) / len2, 0, 0.9);
-    if (eye.clone().addScaledVector(seg, t).distanceTo(centre) < radius) covers++;
+    // First point inside: add the crossing between it and the last outside one.
+    const prev = out[out.length - 1];
+    if (prev) {
+      const a = prev.length() - r;
+      const t = a / (a + (r - p.length()));
+      out.push(prev.clone().lerp(p, t).setLength(r));
+    }
+    break;
   }
-  return { gap, covers };
-}
-
-/** Whether `p` lies in front of a camera at `eye` looking at `target`, inside the free rectangle (10% margin). */
-function inView(eye: THREE.Vector3, target: THREE.Vector3, p: THREE.Vector3, o: FrameOpts): boolean {
-  const f = target.clone().sub(eye).normalize();
-  const right = new THREE.Vector3().crossVectors(f, UP);
-  if (right.lengthSq() < 1e-6) right.copy(perpendicular(f));
-  right.normalize();
-  const up = new THREE.Vector3().crossVectors(right, f);
-  const q = p.clone().sub(eye);
-  const depth = q.dot(f);
-  return depth > 1 && Math.abs(q.dot(right)) <= o.tanH * 0.9 * depth && Math.abs(q.dot(up)) <= o.tanV * 0.9 * depth;
+  return out.length >= 2 ? out : [points[0].clone(), points[points.length - 1].clone().setLength(r)];
 }
 
 /** The destination from outside, 35 degrees away from the origin's side. */

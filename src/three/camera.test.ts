@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { BEAM_CLEARANCE, clearance, frameBeamInside, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { beamToSkin, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -147,96 +147,33 @@ describe('frameInward', () => {
   });
 });
 
-describe('frameBeamInside', () => {
-  // An agent fetching an entity (#54): the camera goes inside, and both the
-  // satellite and the cylinder are in frame.
+describe('agent fetching an entity, framed from outside', () => {
+  // The live view stays outside: the beam from the satellite to where it
+  // enters the skin, never an eye inside the globe.
   const cases = [
     { sat: new THREE.Vector3(0.1, 0.6, -1).normalize().multiplyScalar(DOME_R * 1.55), entity: new THREE.Vector3(-2, 4, -28) },
     { sat: new THREE.Vector3(-0.8, 0.3, 0.5).normalize().multiplyScalar(DOME_R * 1.3), entity: new THREE.Vector3(6, -3, -40) },
     { sat: new THREE.Vector3(0, 1, 0).multiplyScalar(DOME_R * 1.65), entity: new THREE.Vector3(1, 2, 3) },
+    { sat: new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(150)).multiplyScalar(93), entity: new THREE.Vector3(0, 0, 52) },
   ];
-  for (const [name, aspect] of Object.entries(ASPECTS))
-    cases.forEach(({ sat, entity }, i) => {
-      it(`keeps satellite and cylinder in frame from inside, case ${i + 1} on ${name}`, () => {
-        const k = frameBeamInside(sat, entity, tans(aspect));
-        expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
-        const at = shoot(k, aspect);
-        expect(at(entity).inFrame).toBe(true);
-        expect(at(sat).inFrame).toBe(true);
-      });
-    });
+  const beam = (sat: THREE.Vector3, entity: THREE.Vector3) => Array.from({ length: 17 }, (_, i) => sat.clone().lerp(entity, i / 16));
 
-  // #55 review: a destination on the outer sight shell with the satellite
-  // across the globe. Keeping the eye inside used to put the destination
-  // behind the camera; now it falls back to the destination alone, in front.
-  for (const [name, aspect] of Object.entries(ASPECTS))
-    it(`keeps a far-side destination on the outer shell in front of the camera on ${name}`, () => {
-      const dest = new THREE.Vector3(0, 0, 52);
-      const sat = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), THREE.MathUtils.degToRad(150)).multiplyScalar(93);
-      const k = frameBeamInside(sat, dest, tans(aspect));
-      expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
-      expect(shoot(k, aspect)(dest).inFrame).toBe(true);
-    });
-});
-
-describe('frameBeamInside clearance (#68, B2)', () => {
-  const sat = new THREE.Vector3(0.1, 0.6, -1).normalize().multiplyScalar(DOME_R * 1.55);
-  const entity = new THREE.Vector3(-2, 4, -28);
-  const pos = (k: CameraKeyframe) => new THREE.Vector3(k.position.x, k.position.y, k.position.z);
-  const framed = (k: CameraKeyframe, aspect: number) => {
-    const at = shoot(k, aspect);
-    return at(entity).inFrame && at(sat).inFrame;
-  };
-
-  for (const [name, aspect] of Object.entries(ASPECTS)) {
-    it(`keeps the default shot when nothing is in the way on ${name}`, () => {
-      expect(frameBeamInside(sat, entity, tans(aspect), [])).toEqual(frameBeamInside(sat, entity, tans(aspect)));
-    });
-
-    it(`moves off an emblem sitting where the camera would be on ${name}`, () => {
-      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
-      const emblem = { centre: plain.clone(), radius: 4 };
-      const k = frameBeamInside(sat, entity, tans(aspect), [emblem]);
-      expect(pos(k).distanceTo(emblem.centre) - emblem.radius).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
-      expect(framed(k, aspect)).toBe(true);
-    });
-
-    it(`takes the other side when the preferred one is blocked all the way back on ${name}`, () => {
-      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
-      // A wall of big emblems along the preferred side's whole pull-back line.
-      const dir = sat.clone().sub(entity).normalize();
-      const wall = [0, 4, 8, 12, 16].map((d) => ({ centre: plain.clone().addScaledVector(dir, -d), radius: 5 }));
-      const k = frameBeamInside(sat, entity, tans(aspect), wall);
-      expect(clearance(pos(k), entity, wall).gap).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
-      expect(framed(k, aspect)).toBe(true);
-    });
-
-    it(`keeps both endpoints framed when no pose is clear on ${name}`, () => {
-      // Obstacles everywhere: no candidate can be clear, framing still wins.
-      const fog = [];
-      for (let x = -40; x <= 40; x += 8) for (let y = -40; y <= 40; y += 8) for (let z = -50; z <= 10; z += 8) fog.push({ centre: new THREE.Vector3(x, y, z), radius: 3 });
-      const k = frameBeamInside(sat, entity, tans(aspect), fog);
-      expect(pos(k).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
-      expect(framed(k, aspect)).toBe(true);
-    });
-  }
-
-  it('measures the gap to the surface and counts what covers the entity', () => {
-    const eye = new THREE.Vector3(0, 0, 0);
-    const dest = new THREE.Vector3(0, 0, -20);
-    expect(clearance(eye, dest, [{ centre: new THREE.Vector3(0, 0, -10), radius: 2 }])).toEqual({ gap: 8, covers: 1 });
-    expect(clearance(eye, dest, [{ centre: new THREE.Vector3(10, 0, -10), radius: 2 }]).covers).toBe(0);
+  it('clips the beam where it enters the skin', () => {
+    const pts = beamToSkin(beam(cases[0].sat, cases[0].entity));
+    expect(pts[0].equals(cases[0].sat)).toBe(true);
+    expect(pts[pts.length - 1].length()).toBeCloseTo(DOME_R, 6);
+    pts.forEach((p) => expect(p.length()).toBeGreaterThanOrEqual(DOME_R - 1e-6));
   });
 
   for (const [name, aspect] of Object.entries(ASPECTS))
-    it(`prefers the clear pose with fewer entities in front of the destination on ${name}`, () => {
-      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
-      // A small emblem just in front of the entity on the default line of sight.
-      const blocker = { centre: plain.clone().lerp(entity, 0.8), radius: 1.5 };
-      const k = frameBeamInside(sat, entity, tans(aspect), [blocker]);
-      const c = clearance(pos(k), entity, [blocker]);
-      expect(c.gap).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
-      expect(c.covers).toBe(0);
-      expect(framed(k, aspect)).toBe(true);
+    cases.forEach(({ sat, entity }, i) => {
+      it(`keeps the eye outside with the satellite and the entry point in frame, case ${i + 1} on ${name}`, () => {
+        const pts = beamToSkin(beam(sat, entity));
+        const { key: k, full } = framePair(pts, tans(aspect));
+        expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeGreaterThan(DOME_R);
+        const at = shoot(k, aspect);
+        expect(at(pts[pts.length - 1]).inFrame).toBe(true);
+        if (full) expect(at(sat).inFrame).toBe(true);
+      });
     });
 });
