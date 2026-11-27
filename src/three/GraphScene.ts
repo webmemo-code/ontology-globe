@@ -246,8 +246,8 @@ export class GraphScene {
   private drift: { kind: 'pair' } | { kind: 'tour'; sign: number; t0: number; applied: number } | null = null;
   /** The guided tour owns the camera: no system spin, no live follow. */
   private touring = false;
-  /** The entity an inside follow shot is about (#54): like a selection, it fades the other emblems. */
-  private followFocus: string | null = null;
+  /** The entity an inside agent shot is about (#54, #68), from live follow or a clicked row: other emblems fade, cylinders go matte. */
+  private shotFocus: string | null = null;
   private touchedAt = 0;
   private lastTick = 0;
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -278,7 +278,7 @@ export class GraphScene {
       // The user takes the camera: any flight in progress ends here, settled as cancelled.
       this.cancelFlight();
       this.drift = null;
-      if (this.followFocus) this.setFollowFocus(null); // the user looks around: every emblem back
+      if (this.shotFocus) this.setShotFocus(null); // the user looks around: every emblem back
       this.controls.autoRotate = false;
       this.atHome = false;
       this.touchedAt = performance.now();
@@ -499,7 +499,7 @@ export class GraphScene {
   // ---------- styling ----------
 
   setMode(mode: SiteMode) {
-    this.followFocus = null; // applyStyle below restyles every emblem
+    this.shotFocus = null; // applyStyle below restyles every emblem
     this.mode = mode;
     this.articles.setMode(mode);
     this.applyStyle();
@@ -510,7 +510,7 @@ export class GraphScene {
   /** Live readers and AI agents (null clears the layer). */
   setLive(data: LiveBySite | null) {
     this.liveData = data;
-    if (!data) this.setFollowFocus(null);
+    if (!data) this.setShotFocus(null);
     this.refreshLive();
   }
 
@@ -752,7 +752,7 @@ export class GraphScene {
     // burn in those shots came from nearby lit cylinders: their glass streak
     // (made matte in paint()) and their bright stacked fill, not their glow
     // alone, so fill, colour, glow and halo all drop.
-    const stepBack = !!this.followFocus && this.followFocus !== node.key;
+    const stepBack = !!this.shotFocus && this.shotFocus !== node.key;
     if (stepBack) {
       L.fill *= 0.25;
       L.color.multiplyScalar(0.5);
@@ -771,7 +771,7 @@ export class GraphScene {
       // Emblems stay a little see-through; an orphan's flag or logo fades like its outline would.
       // With one entity in focus (selected, or an inside follow shot), every other
       // flag, logo and face steps back, so a crowded shot reads (#54).
-      const focus = this.selected ?? this.followFocus;
+      const focus = this.selected ?? this.shotFocus;
       const other = !!focus && focus !== node.key;
       L.face = other ? 0.12 : dim || !present ? 0.2 : orphan ? 0.4 : person ? 1 : 0.7;
       L.faceTint.copy(person ? FACE_TINT.person : FACE_TINT.emblem);
@@ -906,7 +906,7 @@ export class GraphScene {
     // under-light's streak cross the bloom threshold; ghosts stay matte and calm.
     // An inside agent shot (#68, B1) keeps every cylinder matte: from inside, at
     // grazing angles, the glass streak was what burned white under bloom.
-    m.roughness = THREE.MathUtils.lerp(GHOST_ROUGH, this.followFocus ? GHOST_ROUGH : LIT_ROUGH, s);
+    m.roughness = THREE.MathUtils.lerp(GHOST_ROUGH, this.shotFocus ? GHOST_ROUGH : LIT_ROUGH, s);
     m.opacity = THREE.MathUtils.lerp(L.ghostFill, L.fill, s);
     const o = v.outline.material;
     const fetched = this.view === 'graph' ? this.liveEntities.get(v.key) : undefined;
@@ -1100,7 +1100,8 @@ export class GraphScene {
     // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(this.pairShot(path), 1900, owner);
+    // A clicked agent row gets the same inside-shot treatment as live follow (#72 review).
+    if (path) return void this.flyTo(this.pairShot(path), 1900, owner, undefined, path.interior ? path.entity ?? null : null);
     const shot = this.shotFor(key);
     if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
   }
@@ -1199,23 +1200,21 @@ export class GraphScene {
     const path = this.live.pathOf(row);
     if (!path) return 'none';
     const reduced = this.reduced.matches;
-    const shot = this.pairShot(path);
-    this.setFollowFocus(path.interior ? path.entity ?? null : null);
-    void this.flyTo(shot, reduced ? 1 : 2400, 'follow').then((r) => {
+    void this.flyTo(this.pairShot(path), reduced ? 1 : 2400, 'follow', undefined, path.interior ? path.entity ?? null : null).then((r) => {
       if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
     return 'started';
   }
 
-  private setFollowFocus(key: string | null) {
-    if (key === this.followFocus) return;
-    this.followFocus = key;
+  private setShotFocus(key: string | null) {
+    if (key === this.shotFocus) return;
+    this.shotFocus = key;
     this.applyStyle();
   }
 
   /** Follow switched off: end a follow flight and the drift where they are; other flights carry on. */
   stopFollow() {
-    this.setFollowFocus(null);
+    this.setShotFocus(null);
     if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
     if (this.drift?.kind === 'pair') this.drift = null;
   }
@@ -1244,9 +1243,10 @@ export class GraphScene {
     const box = new THREE.Box3();
     const sphere = new THREE.Sphere();
     for (const v of this.views.values()) {
-      // By what the entity is, not how lit it is now: the spotlight lights the
-      // ones near the camera only once the camera is there.
-      if (v.key === skip || (v.lit.fill <= 0 && !(v.face && v.lit.face > 0.15))) continue;
+      // By what the entity is, not how it is styled now: the spotlight lights
+      // the ones near the camera only once it is there, and the previous
+      // shot's step-back fade must not hide an emblem from the next (#72 review).
+      if (v.key === skip || !v.pickable) continue;
       const shape = v.face?.visible ? v.face : v.mesh.visible ? v.mesh : null;
       if (!shape) continue;
       box.setFromObject(shape).getBoundingSphere(sphere);
@@ -1274,13 +1274,14 @@ export class GraphScene {
    * or a later flight takes over; a flight cannot replace one with a higher
    * owner (camera.ts), and then resolves 'refused' without moving.
    */
-  flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select', path?: PathPolicy): Promise<FlightResult> {
+  flyTo(to: CameraKeyframe, ms = 1600, owner: CameraOwner = 'select', path?: PathPolicy, focus: string | null = null): Promise<FlightResult> {
     if (this.flight && outranks(this.flight.owner, owner)) return Promise.resolve('refused');
     this.cancelFlight();
     this.drift = null;
-    // Any flight but live follow's leaves the followed shot: Reset view, a
-    // selection, the tour, a blog switch flying home. Its emblem fade goes too.
-    if (owner !== 'follow' && this.followFocus) this.setFollowFocus(null);
+    // `focus`: the entity an inside agent shot is about (live follow or a
+    // clicked agent row). Any other flight (Reset view, a selection, the tour,
+    // a blog switch flying home) leaves that shot, and its styling goes too.
+    this.setShotFocus(focus);
     this.controls.autoRotate = false;
     if (to !== this.homes[this.view]) this.atHome = false;
     const from = { position: this.camera.position.clone(), target: this.controls.target.clone() };
