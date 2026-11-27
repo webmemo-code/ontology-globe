@@ -7,9 +7,9 @@ import type { LiveBySite } from '../data/live';
  */
 export interface LiveStatus {
   tone: 'ok' | 'degraded';
-  /** Short, after "Live ·" on the pill. */
+  /** Short note after "Live visitors ·" on the pill while degraded. */
   short: string;
-  /** At most 7 characters, in place of "Live" on a phone (as long as "Offline"). */
+  /** On a phone, the whole label: "Live visitors" when healthy, else a cue of at most 7 characters. */
   tiny: string;
   /** Full sentence for the tooltip and screen readers. */
   long: string;
@@ -39,5 +39,5 @@ export function liveStatus(data: LiveBySite | null): LiveStatus {
       long: `Last 30 min: readers from ${SITE_NAME[s]} only; AI agents from both blogs`,
     };
   }
-  return { tone: 'ok', short: '30 min', tiny: 'Live', long: 'Last 30 min, both blogs' };
+  return { tone: 'ok', short: '30 min', tiny: 'Live visitors', long: 'Last 30 min, both blogs' };
 }
