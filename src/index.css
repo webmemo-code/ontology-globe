@@ -282,11 +282,10 @@ a.ext:hover { text-decoration: underline; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--live); box-shadow: 0 0 6px rgba(143, 209, 138, 0.6); }
 .live-pill.degraded .live-dot { background: var(--warn); box-shadow: 0 0 6px rgba(229, 176, 77, 0.6); }
 .live-pill + .topbar-stats { margin-left: 4px; }
-/* Guided tour and Reset view: plain text buttons; only the play glyph is orange. */
+/* Guided tour and Reset view: plain text buttons in the same weight and colour; only the play glyph is orange. */
 .topbar .row button.ghost { background: none; border-color: transparent; }
 .topbar .row button.ghost:hover { color: var(--ink); }
 .tour-btn { display: inline-flex; align-items: center; gap: 7px; }
-.topbar .row button.tour-btn { color: var(--ink); font-weight: 700; }
 .tour-btn .glyph { fill: var(--orange); }
 .legend .live-legend { display: block; margin: 8px 0 2px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
 .legend .live-legend > div { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 4px; }
