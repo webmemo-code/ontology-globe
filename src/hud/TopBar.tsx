@@ -58,7 +58,8 @@ function PlayGlyph() {
  */
 function LivePill({ on, status, compact, onClick }: { on: boolean; status: LiveStatus; compact: boolean; onClick: () => void }) {
   const tone = !on ? 'off' : status.tone === 'ok' ? 'on' : 'on degraded';
-  const text = !on ? 'Offline' : compact ? 'Live' : `Live · ${status.short}`;
+  // On a phone the degraded state keeps a short text cue, not colour alone (#73 review).
+  const text = !on ? 'Offline' : compact ? status.tiny : `Live · ${status.short}`;
   return (
     <button className={`live-pill ${tone}`} onClick={onClick} aria-pressed={on} aria-label="Live activity" aria-describedby="live-pill-state" title={on ? status.long : 'Live activity is off'}>
       {on ? <span className="live-dot" aria-hidden /> : <PlayGlyph />}

@@ -15,4 +15,13 @@ describe('liveStatus (#65)', () => {
     expect(liveStatus({ reisememo: snap('ok') })).toMatchObject({ tone: 'degraded', short: 'DE only' });
     expect(liveStatus({ travelmemo: snap('error'), reisememo: snap('not-configured') })).toMatchObject({ tone: 'degraded', short: 'agents only' });
   });
+
+  it('reports a reader outage on one blog even when both blogs answer (#73 review)', () => {
+    expect(liveStatus({ travelmemo: snap('ok'), reisememo: snap('error') })).toMatchObject({ tone: 'degraded', short: 'EN readers', tiny: 'Partial' });
+  });
+
+  it('keeps every phone cue as short as "Offline"', () => {
+    const fixtures: (LiveBySite | null)[] = [null, {}, { reisememo: snap('ok') }, { travelmemo: snap('error') }, { travelmemo: snap('ok'), reisememo: snap('error') }, { travelmemo: snap('ok'), reisememo: snap('ok') }];
+    for (const f of fixtures) expect(liveStatus(f).tiny.length).toBeLessThanOrEqual('Offline'.length);
+  });
 });
