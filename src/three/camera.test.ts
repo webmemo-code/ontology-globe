@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { frameBeamInside, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { BEAM_CLEARANCE, clearance, frameBeamInside, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -176,5 +176,67 @@ describe('frameBeamInside', () => {
       const k = frameBeamInside(sat, dest, tans(aspect));
       expect(new THREE.Vector3(k.position.x, k.position.y, k.position.z).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
       expect(shoot(k, aspect)(dest).inFrame).toBe(true);
+    });
+});
+
+describe('frameBeamInside clearance (#68, B2)', () => {
+  const sat = new THREE.Vector3(0.1, 0.6, -1).normalize().multiplyScalar(DOME_R * 1.55);
+  const entity = new THREE.Vector3(-2, 4, -28);
+  const pos = (k: CameraKeyframe) => new THREE.Vector3(k.position.x, k.position.y, k.position.z);
+  const framed = (k: CameraKeyframe, aspect: number) => {
+    const at = shoot(k, aspect);
+    return at(entity).inFrame && at(sat).inFrame;
+  };
+
+  for (const [name, aspect] of Object.entries(ASPECTS)) {
+    it(`keeps the default shot when nothing is in the way on ${name}`, () => {
+      expect(frameBeamInside(sat, entity, tans(aspect), [])).toEqual(frameBeamInside(sat, entity, tans(aspect)));
+    });
+
+    it(`moves off an emblem sitting where the camera would be on ${name}`, () => {
+      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
+      const emblem = { centre: plain.clone(), radius: 4 };
+      const k = frameBeamInside(sat, entity, tans(aspect), [emblem]);
+      expect(pos(k).distanceTo(emblem.centre) - emblem.radius).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
+      expect(framed(k, aspect)).toBe(true);
+    });
+
+    it(`takes the other side when the preferred one is blocked all the way back on ${name}`, () => {
+      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
+      // A wall of big emblems along the preferred side's whole pull-back line.
+      const dir = sat.clone().sub(entity).normalize();
+      const wall = [0, 4, 8, 12, 16].map((d) => ({ centre: plain.clone().addScaledVector(dir, -d), radius: 5 }));
+      const k = frameBeamInside(sat, entity, tans(aspect), wall);
+      expect(clearance(pos(k), entity, wall).gap).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
+      expect(framed(k, aspect)).toBe(true);
+    });
+
+    it(`keeps both endpoints framed when no pose is clear on ${name}`, () => {
+      // Obstacles everywhere: no candidate can be clear, framing still wins.
+      const fog = [];
+      for (let x = -40; x <= 40; x += 8) for (let y = -40; y <= 40; y += 8) for (let z = -50; z <= 10; z += 8) fog.push({ centre: new THREE.Vector3(x, y, z), radius: 3 });
+      const k = frameBeamInside(sat, entity, tans(aspect), fog);
+      expect(pos(k).length()).toBeLessThanOrEqual(DOME_R * 0.82 + 1e-6);
+      expect(framed(k, aspect)).toBe(true);
+    });
+  }
+
+  it('measures the gap to the surface and counts what covers the entity', () => {
+    const eye = new THREE.Vector3(0, 0, 0);
+    const dest = new THREE.Vector3(0, 0, -20);
+    expect(clearance(eye, dest, [{ centre: new THREE.Vector3(0, 0, -10), radius: 2 }])).toEqual({ gap: 8, covers: 1 });
+    expect(clearance(eye, dest, [{ centre: new THREE.Vector3(10, 0, -10), radius: 2 }]).covers).toBe(0);
+  });
+
+  for (const [name, aspect] of Object.entries(ASPECTS))
+    it(`prefers the clear pose with fewer entities in front of the destination on ${name}`, () => {
+      const plain = pos(frameBeamInside(sat, entity, tans(aspect)));
+      // A small emblem just in front of the entity on the default line of sight.
+      const blocker = { centre: plain.clone().lerp(entity, 0.8), radius: 1.5 };
+      const k = frameBeamInside(sat, entity, tans(aspect), [blocker]);
+      const c = clearance(pos(k), entity, [blocker]);
+      expect(c.gap).toBeGreaterThanOrEqual(BEAM_CLEARANCE);
+      expect(c.covers).toBe(0);
+      expect(framed(k, aspect)).toBe(true);
     });
 });
