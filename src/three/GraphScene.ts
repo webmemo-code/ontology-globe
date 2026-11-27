@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
-import { FlashQueue, envelope, type FlashKind } from './agentFlash';
+import { FlashQueue, envelope, type FlashKind, type FlashRow } from './agentFlash';
 import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import { tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
@@ -185,9 +185,8 @@ export class GraphScene {
   private labels = new Labels();
   private live = new LiveLayer(this.labels);
   private liveData: LiveBySite | null = null;
-  /** New agent fetches flash their target (#80): queue, last poll's fetch rows (null before the first), country border lines. */
+  /** New agent fetches flash their target (#80): queue and country border lines. */
   private flashes = new FlashQueue();
-  private flashRows: Set<string> | null = null;
   private flashLines = new Map<string, { line: LineSegments2; segs: number[]; mat: LineMaterial }>();
   /** Topics a flash showed last frame: repainted once their flash is gone. */
   private flashTopics = new Set<string>();
@@ -541,8 +540,7 @@ export class GraphScene {
    * as new; the queue staggers them. Targets no fetch points at any more go.
    */
   private queueFlashes(data: LiveBySite | null) {
-    const rows = new Set<string>();
-    const targets = new Set<string>();
+    const rows: FlashRow[] = [];
     for (const [site, snap] of Object.entries(data ?? {})) {
       for (const b of snap?.bots ?? []) {
         if (b.kind !== 'entity' || !b.entity) continue;
@@ -551,13 +549,10 @@ export class GraphScene {
           node?.class === 'topics' ? [b.entity, 'topic'] : node?.class === 'places' ? ((c) => (c ? [c, 'country'] : null))(ancestorOfType(this.tree, this.nodes, b.entity, 'Country')) : null;
         if (!target) continue;
         const row = `b:${site}:${b.bot}:${b.route}:${b.entity}`;
-        rows.add(row);
-        targets.add(target[0]);
-        if (!this.flashRows?.has(row)) this.flashes.add(target[0], target[1], TIER_COLORS[tierOf(b.bot)], site);
+        rows.push({ id: row, key: target[0], kind: target[1], color: TIER_COLORS[tierOf(b.bot)], site, age: b.seconds_ago });
       }
     }
-    this.flashes.retain(targets);
-    this.flashRows = data ? rows : null;
+    this.flashes.sync(rows);
   }
 
   /** Per frame: start queued flashes and draw them, from outside the globe in the globe view only. */
@@ -567,7 +562,8 @@ export class GraphScene {
     if (on) this.flashes.update(t);
     const shown = new Set<string>();
     for (const f of this.flashes.flashes.values()) {
-      if (!on || f.start === null || (this.mode !== 'both' && !f.sites.has(this.mode))) continue;
+      const color = this.mode === 'both' ? f.color : f.siteColors.get(this.mode);
+      if (!on || f.start === null || !color) continue;
       const e = envelope(t - f.start, this.reduced.matches);
       shown.add(f.key);
       if (f.kind === 'country') {
@@ -577,7 +573,7 @@ export class GraphScene {
           const segs: number[] = [];
           borderSegments(feat.geometry, segs);
           const { clientWidth: w, clientHeight: h } = this.container;
-          const mat = new LineMaterial({ color: f.color, linewidth: 2.5, transparent: true, depthWrite: false });
+          const mat = new LineMaterial({ color, linewidth: 2.5, transparent: true, depthWrite: false });
           mat.resolution.set(w, h);
           fl = { line: new LineSegments2(new LineSegmentsGeometry(), mat), segs, mat };
           this.flashLines.set(f.key, fl);
@@ -591,7 +587,7 @@ export class GraphScene {
           const near: number[] = [];
           for (let i = 0; i < fl.segs.length; i += 6) if (facing(i) && facing(i + 3)) near.push(...fl.segs.slice(i, i + 6));
           if (near.length) fl.line.geometry.setPositions(near);
-          fl.mat.color.set(f.color);
+          fl.mat.color.set(color);
           fl.mat.opacity = e;
           fl.line.visible = e > 0.003 && near.length > 0;
         }
@@ -601,7 +597,7 @@ export class GraphScene {
         if (!v) continue;
         this.flashTopics.add(f.key);
         v.detail.value = Math.max(v.detail.value, e);
-        v.mesh.material.color.lerp(this.tmpColor.set(f.color), Math.min(1, e * 1.5));
+        v.mesh.material.color.lerp(this.tmpColor.set(color), Math.min(1, e * 1.5));
         v.mesh.material.opacity = Math.max(v.mesh.material.opacity, 0.85 * e);
         v.outline.material.opacity = Math.max(v.outline.material.opacity, e);
         // Most topics are small and sit deep inside: a solid dot in the agent's
@@ -615,7 +611,7 @@ export class GraphScene {
         }
         dot.position.copy(v.mesh.position);
         dot.scale.setScalar(Math.max(3, v.size * 2));
-        dot.material.color.set(f.color);
+        dot.material.color.set(color);
         dot.material.opacity = e;
         dot.visible = e > 0.003;
       }

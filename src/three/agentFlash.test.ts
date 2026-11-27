@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, envelope } from './agentFlash';
+import { FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, envelope, type FlashRow } from './agentFlash';
 
 describe('envelope (#80)', () => {
   it('flickers, then fades to the floor and stays there', () => {
@@ -18,33 +18,57 @@ describe('envelope (#80)', () => {
   });
 });
 
+const target = 'topics/hiking';
+const row = (id: string, opts: Partial<FlashRow> = {}): FlashRow => ({
+  id, key: target, kind: 'topic', color: '#4C96F2', site: 'travelmemo', age: 30, ...opts,
+});
+
 describe('FlashQueue (#80)', () => {
-  it('flashes each target once, however many agents fetch it', () => {
+  it('coalesces multiple new rows for a target, then reflashes when a new row joins later', () => {
     const q = new FlashQueue();
-    q.add('places/switzerland', 'country', '#4C96F2', 'travelmemo');
-    q.add('places/switzerland', 'country', '#8FBEFF', 'reisememo');
-    expect(q.flashes.size).toBe(1);
-    expect([...q.flashes.get('places/switzerland')!.sites]).toEqual(['travelmemo', 'reisememo']);
-  });
-
-  it('staggers starts and keeps at most MAX_ACTIVE flickering', () => {
-    const q = new FlashQueue();
-    for (let i = 0; i < 7; i++) q.add(`topics/t${i}`, 'topic', '#4C96F2', 'travelmemo');
-    const started = (now: number) => [...q.flashes.values()].filter((f) => f.start !== null && f.start <= now).length;
+    q.sync([row('a'), row('b')]);
     q.update(0);
-    expect(started(0)).toBe(1); // one at a time
-    for (let t = STAGGER_S; t < FLICKER_S; t += STAGGER_S) q.update(t);
-    const flickering = [...q.flashes.values()].filter((f) => f.start !== null && FLICKER_S - 0.01 - f.start < FLICKER_S).length;
-    expect(flickering).toBeLessThanOrEqual(MAX_ACTIVE);
-    for (let t = FLICKER_S; t < 10; t += 0.1) q.update(t);
-    expect(started(10)).toBe(7); // everyone gets a turn
+    q.update(30);
+    expect(q.flashes.size).toBe(1);
+    expect(q.flashes.get(target)!.start).toBe(0);
+    q.sync([row('a'), row('b'), row('c')]);
+    q.update(31);
+    expect(q.flashes.get(target)!.start).toBe(31);
+    q.sync([row('a'), row('b'), row('c')]);
+    q.update(60);
+    expect(q.flashes.get(target)!.start).toBe(31);
   });
 
-  it('drops a target once no fetch points at it', () => {
+  it('staggers target starts and keeps at most MAX_ACTIVE flickering', () => {
     const q = new FlashQueue();
-    q.add('places/italy', 'country', '#4C96F2', 'travelmemo');
-    q.add('topics/hiking', 'topic', '#4C96F2', 'travelmemo');
-    q.retain(new Set(['topics/hiking']));
-    expect([...q.flashes.keys()]).toEqual(['topics/hiking']);
+    q.sync(Array.from({ length: 7 }, (_, i) => row(String(i), { key: 'topics/t' + i })));
+    const startTimes: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      const now = i / 10;
+      q.update(now);
+      const active = [...q.flashes.values()].filter((f) => f.start !== null && now - f.start < FLICKER_S);
+      expect(active.length).toBeLessThanOrEqual(MAX_ACTIVE);
+      if (active.some((f) => f.start === now)) startTimes.push(now);
+    }
+    expect(startTimes).toHaveLength(7);
+    startTimes.slice(1).forEach((t, i) => expect(t - startTimes[i]).toBeGreaterThanOrEqual(STAGGER_S - 1e-9));
+  });
+
+  it('uses current blog and tier colors and removes targets when their last fetch expires', () => {
+    const q = new FlashQueue();
+    const en = row('en', { age: 4 });
+    const de = row('de', { site: 'reisememo', color: '#8FBEFF', age: 8 });
+    q.sync([en, de]);
+    const flash = q.flashes.get(target)!;
+    expect(flash.color).toBe(en.color);
+    expect(flash.siteColors.get('reisememo')).toBe(de.color);
+    q.update(0);
+    q.sync([de]);
+    expect(flash.siteColors.has('travelmemo')).toBe(false);
+    expect(flash.color).toBe(de.color);
+    q.update(30);
+    expect(flash.start).toBe(0);
+    q.sync([]);
+    expect(q.flashes.size).toBe(0);
   });
 });

@@ -37,32 +37,57 @@ export function envelope(s: number, reduced = false): number {
 
 export type FlashKind = 'country' | 'topic';
 
-export interface Flash {
-  /** Country or topic node key: one flash per target, however many agents fetch it. */
+export interface FlashRow {
+  id: string;
   key: string;
   kind: FlashKind;
   color: string;
-  /** Blogs whose agents fetched it, for the blog switch. */
-  sites: Set<string>;
-  /** When it started flashing (seconds), or null while queued. */
-  start: number | null;
+  site: string;
+  age: number;
 }
 
-/** One flash per target; at most MAX_ACTIVE flickering at a time, starts STAGGER_S apart. */
+export interface Flash {
+  key: string;
+  kind: FlashKind;
+  /** The freshest current fetch, overall and per blog. */
+  color: string;
+  siteColors: Map<string, string>;
+  start: number | null;
+  pending: boolean;
+}
+
+/** Coalesce new rows by target, then stagger the flashes as slots free up. */
 export class FlashQueue {
   readonly flashes = new Map<string, Flash>();
+  private previousRows = new Set<string>();
   private lastStart = -Infinity;
 
-  /** A new fetch of `key`: queue its flash unless it is already showing. */
-  add(key: string, kind: FlashKind, color: string, site: string) {
-    const have = this.flashes.get(key);
-    if (have) return void have.sites.add(site);
-    this.flashes.set(key, { key, kind, color, sites: new Set([site]), start: null });
-  }
-
-  /** Keep only targets some current fetch still points at. */
-  retain(keys: Set<string>) {
-    for (const k of this.flashes.keys()) if (!keys.has(k)) this.flashes.delete(k);
+  /** Feed membership and colors reflect this snapshot. Animation timing persists independently. */
+  sync(rows: FlashRow[]) {
+    const current = new Map<string, FlashRow[]>();
+    for (const row of rows) {
+      const group = current.get(row.key);
+      if (group) group.push(row);
+      else current.set(row.key, [row]);
+    }
+    for (const key of this.flashes.keys()) if (!current.has(key)) this.flashes.delete(key);
+    for (const [key, group] of current) {
+      group.sort((a, b) => a.age - b.age);
+      const { kind, color } = group[0];
+      const siteColors = new Map<string, string>();
+      for (const row of group) if (!siteColors.has(row.site)) siteColors.set(row.site, row.color);
+      const pending = group.some((row) => !this.previousRows.has(row.id));
+      const flash = this.flashes.get(key);
+      if (flash) {
+        flash.color = color;
+        flash.siteColors = siteColors;
+        flash.pending ||= pending;
+      } else {
+        this.flashes.set(key, { key, kind, color, siteColors, start: null, pending });
+      }
+    }
+    this.previousRows = new Set(rows.map((row) => row.id));
+    if (!rows.length) this.lastStart = -Infinity;
   }
 
   /** Start queued flashes as slots free up; call once per frame with the clock in seconds. */
@@ -71,8 +96,9 @@ export class FlashQueue {
     let free = MAX_ACTIVE - flickering;
     for (const f of this.flashes.values()) {
       if (free <= 0 || now - this.lastStart < STAGGER_S) break;
-      if (f.start !== null) continue;
+      if (!f.pending || (f.start !== null && now - f.start < FLICKER_S)) continue;
       f.start = now;
+      f.pending = false;
       this.lastStart = now;
       free--;
     }
