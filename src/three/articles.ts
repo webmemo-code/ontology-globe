@@ -27,6 +27,11 @@ const ARTICLE_MAX_PX = 10;
 const LAND_MAX_PX = 5;
 const BAR_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#989898' };
 const NADIR: [number, number, number] = [0, -1, 0];
+// Country bars give way up close (level of detail): full height while the
+// camera is at least BAR_FULL from a bar's base, shrinking to nothing at
+// BAR_GONE, so a close look at a country shows its article dots, not the bars.
+const BAR_FULL = 40;
+const BAR_GONE = 25;
 
 export interface ArticleStyle {
   rgba: number[];
@@ -393,7 +398,9 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
       lodOn.value = inside ? 0 : 1;
       bars.forEach((bar, i) => {
         const b = barInfo[i];
-        bar.visible = b.on && !inside && b.dir.dot(camera.position) > 0;
+        const k = THREE.MathUtils.smoothstep(camera.position.distanceTo(bar.position), BAR_GONE, BAR_FULL);
+        bar.scale.y = Math.max(k, 1e-3);
+        bar.visible = b.on && !inside && k > 0.01 && b.dir.dot(camera.position) > 0;
       });
       return { from, far, band: (far - near) * 0.04, detail: 1 - THREE.MathUtils.smoothstep(d, DOME_R * 0.8, DOME_R * 1.4) };
     },
