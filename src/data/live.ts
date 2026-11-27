@@ -110,6 +110,31 @@ export function botIcon(bot: string): string | null {
   return file ? `bot-icons/${file}` : null;
 }
 
+// Each operator's most recognisable brand colour, for the country border its
+// fetch lights up (#83). Brands whose identity is black or white take their
+// best-known accent instead, so the line shows on the dark globe.
+const BRAND_COLORS: Record<string, string> = {
+  openai: '#10A37F', // ChatGPT green
+  anthropic: '#D97757', // Claude orange
+  perplexity: '#20808D', // Perplexity turquoise
+  google: '#4285F4', // Google blue
+  apple: '#A2AAAD', // Apple silver
+  meta: '#0081FB', // Meta blue
+  amazon: '#FF9900', // Amazon orange
+  bytedance: '#3C8CFF', // ByteDance blue
+  mistral: '#FA520F', // Mistral orange
+  cohere: '#FF7759', // Cohere coral
+  duckduckgo: '#DE5833', // DuckDuckGo orange-red
+  commoncrawl: '#2A6EBB', // Common Crawl blue
+  diffbot: '#3BB273', // Diffbot green
+};
+
+/** The crawler's operator brand colour, or null when there is none. */
+export function brandColor(bot: string): string | null {
+  const brand = BOT_OPERATOR[bot] ?? BOT_BRAND[bot];
+  return (brand && BRAND_COLORS[brand]) || null;
+}
+
 /** Operator key and record, or null when unknown. */
 export function operatorOf(bot: string): [string, Operator] | null {
   const key = BOT_OPERATOR[bot];
@@ -143,6 +168,47 @@ export interface LiveSnapshot {
 }
 
 export type LiveBySite = Partial<Record<Site, LiveSnapshot>>;
+
+/** Rows the AI agents panel lists; the scene flashes only these (#83). */
+export const AGENT_ROWS = 5;
+
+export interface AgentRow {
+  id: string;
+  site: Site;
+  bot: LiveBot;
+}
+
+/**
+ * Every agent row the AI agents panel can show, in its order (#83): the blog in
+ * view only, newest first, rows whose post or entity `resolves` rejects left
+ * out, deduplicated by row id (the newest fetch wins). The panel and the scene
+ * both select from this, so a flash never goes to a row the panel lacks.
+ */
+export function agentRows(data: LiveBySite | null, mode: string, resolves: (site: Site, bot: LiveBot) => boolean): AgentRow[] {
+  const seen = new Set<string>();
+  const rows: AgentRow[] = [];
+  const scoped = (Object.entries(data ?? {}) as [Site, LiveSnapshot | undefined][]).filter(([site]) => mode === 'both' || site === mode);
+  const all = scoped.flatMap(([site, snap]) => (snap?.bots ?? []).map((bot) => ({ site, bot })));
+  for (const { site, bot } of all.sort((x, y) => x.bot.seconds_ago - y.bot.seconds_ago)) {
+    if (!resolves(site, bot)) continue;
+    const id = `b:${site}:${bot.bot}:${bot.route}:${bot.post ?? bot.entity}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    rows.push({ id, site, bot });
+  }
+  return rows;
+}
+
+/** A row resolves when its post (keyed `post:<site>:<id>`) or its entity is in the graph. */
+export const fetchResolver =
+  (posts: { has(key: string): boolean }, nodes: { has(key: string): boolean }) =>
+  (site: Site, bot: LiveBot): boolean =>
+    bot.kind === 'post' ? !!bot.post && posts.has(`post:${site}:${bot.post}`) : bot.kind === 'entity' && !!bot.entity && nodes.has(bot.entity);
+
+/** The agent rows the panel lists: the first AGENT_ROWS of agentRows. */
+export function listedFetches(data: LiveBySite | null, mode: string, resolves: (site: Site, bot: LiveBot) => boolean): AgentRow[] {
+  return agentRows(data, mode, resolves).slice(0, AGENT_ROWS);
+}
 
 const HOSTS: Record<Site, string> = { travelmemo: 'https://travelmemo.com', reisememo: 'https://reisememo.ch' };
 
