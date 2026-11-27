@@ -10,9 +10,10 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
-import { LiveLayer, hash } from './live';
+import { LiveLayer, TIER_COLORS, hash } from './live';
+import { FlashQueue, envelope, type FlashKind } from './agentFlash';
 import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
-import type { LiveBySite } from '../data/live';
+import { tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
@@ -107,6 +108,21 @@ function flicker(t: number, seed: number): number {
 }
 
 /** The colour depthFade scales from; written here, so the spotlight and the depth cue share one source. */
+/** A solid dot with a short soft rim, for a topic's agent flash (#80). */
+function flashDotTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.5, 'rgba(255,255,255,1)');
+  g.addColorStop(0.7, 'rgba(255,255,255,0.3)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
 function setBase(m: THREE.Material & { color: THREE.Color }, c: THREE.Color) {
   ((m.userData.base ??= new THREE.Color()) as THREE.Color).copy(c);
 }
@@ -169,6 +185,15 @@ export class GraphScene {
   private labels = new Labels();
   private live = new LiveLayer(this.labels);
   private liveData: LiveBySite | null = null;
+  /** New agent fetches flash their target (#80): queue, last poll's fetch rows (null before the first), country border lines. */
+  private flashes = new FlashQueue();
+  private flashRows: Set<string> | null = null;
+  private flashLines = new Map<string, { line: LineSegments2; segs: number[]; mat: LineMaterial }>();
+  /** Topics a flash showed last frame: repainted once their flash is gone. */
+  private flashTopics = new Set<string>();
+  private flashDots = new Map<string, THREE.Sprite>();
+  private flashDotTex: THREE.CanvasTexture | null = null;
+  private flashGroup = new THREE.Group();
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private bloom: BloomComposerResult;
@@ -326,7 +351,7 @@ export class GraphScene {
     shell.position.y = CUBE_Y;
     this.system.group.add(shell);
     this.system.labels.forEach((l, i) => this.labels.set(`sys-label:${i}`, l.text, l.pos, l.priority, { px: l.px, color: l.color, views: ['system'], always: true }));
-    this.articles.group.add(this.ghost, this.ghostFocus, rimGlow(DOME_R, '#FF9000'));
+    this.articles.group.add(this.ghost, this.ghostFocus, this.flashGroup, rimGlow(DOME_R, '#FF9000'));
     this.scene.add(this.articles.group, this.links, this.wheel, this.focusLinks, this.hotLines, this.system.group, this.live.group);
     this.labelScene.add(this.labels.group);
     this.showViewDecor();
@@ -506,7 +531,121 @@ export class GraphScene {
   /** Live readers and AI agents (null clears the layer). */
   setLive(data: LiveBySite | null) {
     this.liveData = data;
+    this.queueFlashes(data);
     this.refreshLive();
+  }
+
+  /**
+   * Agent fetches new since the last poll flash their target (#80): a topic its
+   * cylinder, a place its country's border. The first poll counts every fetch
+   * as new; the queue staggers them. Targets no fetch points at any more go.
+   */
+  private queueFlashes(data: LiveBySite | null) {
+    const rows = new Set<string>();
+    const targets = new Set<string>();
+    for (const [site, snap] of Object.entries(data ?? {})) {
+      for (const b of snap?.bots ?? []) {
+        if (b.kind !== 'entity' || !b.entity) continue;
+        const node = this.nodes.get(b.entity);
+        const target: [string, FlashKind] | null =
+          node?.class === 'topics' ? [b.entity, 'topic'] : node?.class === 'places' ? ((c) => (c ? [c, 'country'] : null))(ancestorOfType(this.tree, this.nodes, b.entity, 'Country')) : null;
+        if (!target) continue;
+        const row = `b:${site}:${b.bot}:${b.route}:${b.entity}`;
+        rows.add(row);
+        targets.add(target[0]);
+        if (!this.flashRows?.has(row)) this.flashes.add(target[0], target[1], TIER_COLORS[tierOf(b.bot)], site);
+      }
+    }
+    this.flashes.retain(targets);
+    this.flashRows = data ? rows : null;
+  }
+
+  /** Per frame: start queued flashes and draw them, from outside the globe in the globe view only. */
+  private drawFlashes(t: number) {
+    const outside = this.camera.position.length() > DOME_R;
+    const on = this.view === 'graph' && this.live.group.visible && outside;
+    if (on) this.flashes.update(t);
+    const shown = new Set<string>();
+    for (const f of this.flashes.flashes.values()) {
+      if (!on || f.start === null || (this.mode !== 'both' && !f.sites.has(this.mode))) continue;
+      const e = envelope(t - f.start, this.reduced.matches);
+      shown.add(f.key);
+      if (f.kind === 'country') {
+        let fl = this.flashLines.get(f.key);
+        const feat = this.atlas?.byNode.get(f.key);
+        if (!fl && feat) {
+          const segs: number[] = [];
+          borderSegments(feat.geometry, segs);
+          const { clientWidth: w, clientHeight: h } = this.container;
+          const mat = new LineMaterial({ color: f.color, linewidth: 2.5, transparent: true, depthWrite: false });
+          mat.resolution.set(w, h);
+          fl = { line: new LineSegments2(new LineSegmentsGeometry(), mat), segs, mat };
+          this.flashLines.set(f.key, fl);
+          this.flashGroup.add(fl.line);
+        }
+        if (fl) {
+          // Near side only: a border segment shows while both ends face the camera.
+          const eye = this.camera.position;
+          const r2 = GHOST_R * GHOST_R;
+          const facing = (i: number) => fl!.segs[i] * eye.x + fl!.segs[i + 1] * eye.y + fl!.segs[i + 2] * eye.z > r2;
+          const near: number[] = [];
+          for (let i = 0; i < fl.segs.length; i += 6) if (facing(i) && facing(i + 3)) near.push(...fl.segs.slice(i, i + 6));
+          if (near.length) fl.line.geometry.setPositions(near);
+          fl.mat.color.set(f.color);
+          fl.mat.opacity = e;
+          fl.line.visible = e > 0.003 && near.length > 0;
+        }
+      } else {
+        // The cylinder shows through the skin in the agent's colour, then settles faint.
+        const v = this.views.get(f.key);
+        if (!v) continue;
+        this.flashTopics.add(f.key);
+        v.detail.value = Math.max(v.detail.value, e);
+        v.mesh.material.color.lerp(this.tmpColor.set(f.color), Math.min(1, e * 1.5));
+        v.mesh.material.opacity = Math.max(v.mesh.material.opacity, 0.85 * e);
+        v.outline.material.opacity = Math.max(v.outline.material.opacity, e);
+        // Most topics are small and sit deep inside: a solid dot in the agent's
+        // colour, drawn over the skin, carries the flash to the outside view.
+        let dot = this.flashDots.get(f.key);
+        if (!dot) {
+          dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: (this.flashDotTex ??= flashDotTexture()), transparent: true, depthTest: false, depthWrite: false, fog: false }));
+          dot.renderOrder = 5;
+          this.flashDots.set(f.key, dot);
+          this.flashGroup.add(dot);
+        }
+        dot.position.copy(v.mesh.position);
+        dot.scale.setScalar(Math.max(3, v.size * 2));
+        dot.material.color.set(f.color);
+        dot.material.opacity = e;
+        dot.visible = e > 0.003;
+      }
+    }
+    for (const [key, fl] of this.flashLines) {
+      if (shown.has(key)) continue;
+      fl.line.visible = false;
+      if (!this.flashes.flashes.has(key)) {
+        this.flashGroup.remove(fl.line);
+        fl.line.geometry.dispose();
+        fl.mat.dispose();
+        this.flashLines.delete(key);
+      }
+    }
+    // A topic whose flash ended gets its own styling back.
+    for (const key of this.flashTopics) {
+      if (shown.has(key)) continue;
+      const v = this.views.get(key);
+      if (v) this.paint(v, v.drawn);
+      this.flashTopics.delete(key);
+    }
+    for (const [key, dot] of this.flashDots) {
+      if (shown.has(key)) continue;
+      dot.visible = false;
+      if (!this.flashes.flashes.has(key)) {
+        this.flashGroup.remove(dot);
+        dot.material.dispose();
+        this.flashDots.delete(key);
+      }
+    }
   }
 
   private refreshLive() {
@@ -1411,6 +1550,7 @@ export class GraphScene {
     this.renderer.setSize(w, h);
     this.bloom.updateSize(w, h);
     this.hotMats.forEach((m) => m.resolution.set(w, h));
+    this.flashLines.forEach((fl) => fl.mat.resolution.set(w, h));
   };
 
   private stepMorph() {
@@ -1471,6 +1611,7 @@ export class GraphScene {
       scaleBox(v, 1 + 0.12 * Math.sin(t * 4));
       v.mesh.rotation.y = v.outline.rotation.y = t * 0.8;
     }
+    this.drawFlashes(t);
     // Entities an agent is fetching: the outline breathes in the agent's colour.
     if (this.live.group.visible)
       for (const key of this.liveEntities.keys()) {
