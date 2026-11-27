@@ -6,7 +6,7 @@ import { SYSTEM_INFO } from './systemInfo';
 import { TOUR } from './tour';
 import { postKey } from './data/globe';
 import { loadAtlas, type Atlas } from './data/atlas';
-import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
+import { agentRows, botName, citiesReady, demoLive, fetchLive, fetchResolver, tierOf, type LiveBySite, type LiveSnapshot } from './data/live';
 import { AgentsPanel } from './hud/AgentsPanel';
 import { ReadersPanel, ReadersStrip, ReadingPanel } from './hud/ReadersPanel';
 import { ServedStrip } from './hud/ServedStrip';
@@ -230,13 +230,12 @@ function Viewer({ graph }: { graph: Graph }) {
         const p = r.post ? posts.get(`post:${site}:${r.post}`) : undefined;
         if (p) push(readers, { id: `r:${site}:${r.country}:${r.city}:${r.post}`, kind: 'reader', site, who: readerPlace(r.country, r.city), what: titleOf(p), pick: postKey(p) });
       }
-    const fetches = scoped.flatMap(([site, snap]) => snap.bots.map((b) => ({ site, b }))).sort((x, y) => x.b.seconds_ago - y.b.seconds_ago);
-    for (const { site, b } of fetches) {
-      const p = b.kind === 'post' && b.post ? posts.get(`post:${site}:${b.post}`) : undefined;
-      const n = b.kind === 'entity' && b.entity ? byKey.get(b.entity) : undefined;
-      if (!p && !n) continue;
+    // One selector with the scene (agentRows): blog scope, resolvable rows, dedup, order (#83).
+    for (const { id, site, bot: b } of agentRows(liveState, mode, fetchResolver(posts, byKey))) {
+      const p = b.kind === 'post' ? posts.get(`post:${site}:${b.post}`) : undefined;
+      const n = b.kind === 'entity' ? byKey.get(b.entity!) : undefined;
       push(bots, {
-        id: `b:${site}:${b.bot}:${b.route}:${b.post ?? b.entity}`,
+        id,
         kind: 'bot',
         site,
         who: botName(b.bot),

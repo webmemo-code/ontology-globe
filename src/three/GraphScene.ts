@@ -13,7 +13,7 @@ import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
 import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
 import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
-import { brandColor, listedFetches, tierOf, type LiveBySite } from '../data/live';
+import { brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
@@ -540,7 +540,6 @@ export class GraphScene {
   /** Live readers and AI agents (null clears the layer). */
   setLive(data: LiveBySite | null) {
     this.liveData = data;
-    this.queueFlashes(data);
     this.refreshLive();
   }
 
@@ -548,11 +547,12 @@ export class GraphScene {
    * Agent fetches new since the last poll flash their target (#80): a topic its
    * cylinder, a place its country's border. The first poll counts every fetch
    * as new; the queue staggers them. Targets no fetch points at any more go.
+   * Runs on every poll and blog switch: a row the switch brings into the panel flashes.
    */
-  private queueFlashes(data: LiveBySite | null) {
+  private queueFlashes() {
     const rows: FlashRow[] = [];
-    // Only the fetches the AI agents panel lists: no flash without a row (#83).
-    for (const { id, site, bot: b } of listedFetches(data)) {
+    // Exactly the rows the AI agents panel lists, by the same selector: no flash without a row (#83).
+    for (const { id, site, bot: b } of listedFetches(this.liveData, this.mode, fetchResolver(this.postsByKey, this.nodes))) {
       if (b.kind !== 'entity' || !b.entity) continue;
       const node = this.nodes.get(b.entity);
       const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, b.entity, 'Country') : null;
@@ -684,7 +684,8 @@ export class GraphScene {
   }
 
   private refreshLive() {
-    const data = this.liveData && this.mode !== 'both' ? { [this.mode]: this.liveData[this.mode] } : this.liveData;
+    this.queueFlashes();
+    const data =this.liveData && this.mode !== 'both' ? { [this.mode]: this.liveData[this.mode] } : this.liveData;
     this.live.set(data, {
       atlas: this.atlas,
       tile: (site, id) => this.articles.at(`post:${site}:${id}`)?.clone() ?? null,
