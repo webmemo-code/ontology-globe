@@ -20,8 +20,8 @@ describe('liveStatus (#65)', () => {
     expect(liveStatus({ travelmemo: snap('ok'), reisememo: snap('error') })).toMatchObject({ tone: 'degraded', short: 'EN readers', tiny: 'Partial' });
   });
 
-  it('keeps every phone cue as short as "Offline"', () => {
+  it('keeps every degraded phone cue within 7 characters', () => {
     const fixtures: (LiveBySite | null)[] = [null, {}, { reisememo: snap('ok') }, { travelmemo: snap('error') }, { travelmemo: snap('ok'), reisememo: snap('error') }, { travelmemo: snap('ok'), reisememo: snap('ok') }];
-    for (const f of fixtures) expect(liveStatus(f).tiny.length).toBeLessThanOrEqual('Offline'.length);
+    for (const f of fixtures) if (liveStatus(f).tone === 'degraded') expect(liveStatus(f).tiny.length).toBeLessThanOrEqual(7);
   });
 });

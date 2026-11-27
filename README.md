@@ -58,7 +58,7 @@ and the photos of its articles. An article draws rays to its entities.
 ## Live
 
 **Live** (the pill at the right of the top bar, globe view, or `?live` in the
-URL). Off, it reads ▶ OFFLINE; on, a green LIVE · 30 MIN, or amber with what
+URL). Off, it reads ▶ CONNECT LIVE; on, a green LIVE VISITORS, or amber with what
 is missing while the feed is degraded (connecting, no feed, one blog only, AI
 agents only). The panels around the globe show the active reads per blog, the
 AI agents by purpose and what each output served; the globe is framed between

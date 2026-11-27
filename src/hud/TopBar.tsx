@@ -52,14 +52,14 @@ function PlayGlyph() {
 
 /**
  * Live as an on-air pill (#65, lookbook B). Off: greyed, an orange arrow before
- * "Offline". On: steady green "Live · 30 min", or amber with what is missing
+ * "Connect live". On: steady green "Live visitors", or amber with what is missing
  * while the feed is degraded. The accessible name stays "Live activity" and
  * aria-pressed carries on/off; the label and tooltip carry the feed state.
  */
 function LivePill({ on, status, compact, onClick }: { on: boolean; status: LiveStatus; compact: boolean; onClick: () => void }) {
   const tone = !on ? 'off' : status.tone === 'ok' ? 'on' : 'on degraded';
   // On a phone the degraded state keeps a short text cue, not colour alone (#73 review).
-  const text = !on ? 'Offline' : compact ? status.tiny : `Live · ${status.short}`;
+  const text = !on ? 'Connect live' : compact || status.tone === 'ok' ? (compact ? status.tiny : 'Live visitors') : `Live visitors · ${status.short}`;
   return (
     <button className={`live-pill ${tone}`} onClick={onClick} aria-pressed={on} aria-label="Live activity" aria-describedby="live-pill-state" title={on ? status.long : 'Live activity is off'}>
       {on ? <span className="live-dot" aria-hidden /> : <PlayGlyph />}
@@ -128,9 +128,9 @@ export function TopBar<V extends string>(p: TopBarProps<V>) {
                 <path d="M3 2v3h3" />
               </svg>
             </button>
-            <button className="tour-btn" onClick={p.onTour}>
+            <button className="tour-btn" onClick={p.onTour} aria-label="Guided tour">
               <PlayGlyph />
-              Tour
+              <span className="tour-label">Tour</span>
             </button>
           </div>
         </div>

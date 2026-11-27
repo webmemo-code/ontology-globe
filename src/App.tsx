@@ -33,8 +33,8 @@ const STATUS_TEXT: Record<string, string> = {
 };
 const MODES: { key: SiteMode; label: string }[] = [
   { key: 'both', label: 'Both' },
-  { key: 'travelmemo', label: 'Travelmemo EN' },
-  { key: 'reisememo', label: 'Reisememo DE' },
+  { key: 'travelmemo', label: 'travelmemo.com EN' },
+  { key: 'reisememo', label: 'reisememo.ch DE' },
 ];
 const VIEWS: { key: View; label: string }[] = [
   { key: 'graph', label: '◍ Globe' },
