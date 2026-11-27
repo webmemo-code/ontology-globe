@@ -82,9 +82,10 @@ them.
   every 30 seconds, and the camera flies to each newly seen reader or agent so
   their location and destination are both in view (just the destination when
   the arc runs behind the globe), then circles it slowly until the next one.
-  An agent fetching an entity is shown from inside the globe, along its beam,
-  with every other flag and logo faded. Dragging, selecting or the tour takes
-  over; clicking any row frames its pair the same way.
+  The camera stays outside the globe: an agent fetching an entity is framed
+  by its beam, from the satellite down to where it enters the globe. Dragging,
+  selecting or the tour takes over; clicking any row frames its pair the same
+  way.
 
 ## On a phone
 
