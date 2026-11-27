@@ -9,6 +9,7 @@ import type { Atlas } from '../data/atlas';
 import type { Graph, GraphNode, GraphPost, Perf, SiteKey, SiteMode } from '../data/types';
 import { fadeRange } from './depthFade';
 import { rasteriseLand } from './land';
+import { LAND_LEVELS, LOD_GLSL, LOD_SPACING_PX, latticeSpacing } from './dotLod';
 
 const RANK: Record<Perf, number> = { top10: 0, top25: 1, active: 2, seen: 3, none: 4 };
 const ARTICLE_SIZE = 0.55;
@@ -20,6 +21,10 @@ const LAND_DOTS = 26000;
 const LAND_R = DOME_R * 0.985;
 const LAND_COLOR = new THREE.Color('#5c646e');
 const LAND_ALPHA = 0.6;
+// Largest on-screen diameter (CSS px) of a dot at its base size (#67, L1):
+// close up, dots stay sharp discs instead of growing into blurs.
+const ARTICLE_MAX_PX = 10;
+const LAND_MAX_PX = 5;
 const BAR_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#989898' };
 const NADIR: [number, number, number] = [0, -1, 0];
 
@@ -51,17 +56,27 @@ export interface ArticleLayer {
   mini: () => THREE.Group;
 }
 
-const VERTEX = `
+const VERTEX = /* glsl */ `
 uniform float uViewH;
 uniform float uDpr;
 uniform float uMinPx;
 uniform float uR;
+uniform float uMaxPx;
+uniform float uRefSize;
+uniform float uSpacing;
+uniform float uLodT;
+uniform float uLodOn;
+uniform float uFirst;
+uniform float uLast;
 attribute vec4 color;
 attribute float size;
 varying vec4 vColor;
 varying float vFacing;
 varying float vFadeDepth;
 varying float vFadeOn;
+varying float vSize;
+varying float vLod;
+${LOD_GLSL}
 void main() {
   vec4 mv = modelViewMatrix * vec4( position, 1.0 );
   gl_Position = projectionMatrix * mv;
@@ -72,8 +87,15 @@ void main() {
   vFacing = length( centre ) < uR * s ? 1.0 : dot( normalize( mv.xyz - centre ), normalize( -mv.xyz ) );
   vFadeDepth = -mv.z;
   vFadeOn = step( 0.99, s ); // the depth range belongs to the big globe only
-  float px = size * s * projectionMatrix[ 1 ][ 1 ] * uViewH * 0.5 / max( -mv.z, 0.01 );
-  gl_PointSize = max( px, uMinPx * uDpr );
+  float k = s * projectionMatrix[ 1 ][ 1 ] * uViewH * 0.5 / max( -mv.z, 0.01 ); // px per world unit here
+  float lo = uMinPx * uDpr;
+  // L1: capped in proportion to the dot's own size, so larger dots stay larger.
+  gl_PointSize = clamp( size * k, lo, max( lo, uMaxPx * uDpr * size / uRefSize ) );
+  vSize = gl_PointSize;
+  // L2: land levels crossfade by their lattice spacing on screen (dotLod.ts).
+  // Outside the big globe only; inside and on the mini globe the base level stays.
+  vLod = uLodOn * vFadeOn > 0.5 ? lodWeight( uSpacing * k, uLodT * uDpr ) : ( uFirst > 0.5 ? 1.0 : 0.0 );
+  if ( vLod < 0.004 ) { gl_Position = vec4( 2.0, 2.0, 2.0, 1.0 ); gl_PointSize = 0.0; }
   vColor = color;
 }`;
 
@@ -84,25 +106,47 @@ varying vec4 vColor;
 varying float vFacing;
 varying float vFadeDepth;
 varying float vFadeOn;
+varying float vSize;
+varying float vLod;
 void main() {
   float d = length( gl_PointCoord - 0.5 ) * 2.0;
   if ( d > 1.0 ) discard;
-  float edge = 1.0 - smoothstep( 0.55, 1.0, d );
+  // A soft rim of about 1 px whatever the size (L1); small dots keep their round falloff.
+  float edge = 1.0 - smoothstep( max( 0.55, 1.0 - 2.0 / max( vSize, 1.0 ) ), 1.0, d );
   float k = smoothstep( uFadeFrom, uFadeFar, vFadeDepth ) * vFadeOn;
   vec4 c = vColor;
   c.rgb *= 1.0 - 0.7 * k;
-  c.a *= ( 1.0 - 0.4 * k ) * edge * smoothstep( -0.02, 0.06, vFacing );
+  c.a *= ( 1.0 - 0.4 * k ) * edge * smoothstep( -0.02, 0.06, vFacing ) * vLod;
   if ( c.a < 0.002 ) discard;
   gl_FragColor = c;
   #include <colorspace_fragment>
 }`;
 
-function dotMaterial(minPx: number): THREE.ShaderMaterial {
+/** Shared per frame by every land level: L2 runs only with the camera outside the globe. */
+const lodOn = { value: 1 };
+
+interface DotOpts {
+  minPx: number;
+  /** Cap for a dot of `refSize`; bigger dots get a proportionally bigger cap. */
+  maxPx: number;
+  refSize: number;
+  /** Land level: its lattice spacing (world units) and place in the chain. Omitted for articles. */
+  lod?: { spacing: number; first: boolean; last: boolean };
+}
+
+function dotMaterial(o: DotOpts): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uViewH: { value: 800 },
       uDpr: { value: 1 },
-      uMinPx: { value: minPx },
+      uMinPx: { value: o.minPx },
+      uMaxPx: { value: o.maxPx },
+      uRefSize: { value: o.refSize },
+      uSpacing: { value: o.lod?.spacing ?? 1 },
+      uLodT: { value: LOD_SPACING_PX },
+      uLodOn: o.lod ? lodOn : { value: 0 },
+      uFirst: { value: !o.lod || o.lod.first ? 1 : 0 },
+      uLast: { value: !o.lod || o.lod.last ? 1 : 0 },
       uR: { value: DOME_R },
       uFadeFrom: fadeRange.uFadeFrom,
       uFadeFar: fadeRange.uFadeFar,
@@ -143,7 +187,7 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
 
   // ---------- article dots ----------
   const geometry = dotGeometry(posts.length);
-  const articleMat = dotMaterial(2.5);
+  const articleMat = dotMaterial({ minPx: 2.5, maxPx: ARTICLE_MAX_PX, refSize: ARTICLE_SIZE });
   const points = track(new THREE.Points(geometry, articleMat));
   points.renderOrder = -1;
   const sizes = geometry.getAttribute('size') as THREE.BufferAttribute;
@@ -199,19 +243,40 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
   place(null);
 
   // ---------- land dots ----------
-  let landGeometry = dotGeometry(0);
-  const landMat = dotMaterial(1.5);
-  const land = track(new THREE.Points(landGeometry, landMat));
-  land.renderOrder = -2;
+  // Level k has 4^k times the base dots at half the size per level, so every
+  // level looks alike at the zoom where it is in charge (#67, L2).
+  const levels = Array.from({ length: LAND_LEVELS }, (_, k) => {
+    const count = LAND_DOTS * 4 ** k;
+    const size = LAND_SIZE / 2 ** k;
+    const mat = dotMaterial({
+      minPx: 1.5,
+      maxPx: LAND_MAX_PX, // the same cap at every level: finer levels add dots, not smaller ones
+      refSize: size,
+      // Every level starts as the last: it hands over only once the next one's
+      // geometry is installed (#71 review), so a close view during startup
+      // keeps the coarse land instead of showing blank land.
+      lod: { spacing: latticeSpacing(count, LAND_R), first: k === 0, last: true },
+    });
+    const pts = track(new THREE.Points(dotGeometry(0), mat));
+    pts.renderOrder = -2;
+    return { count, size, pts };
+  });
+  const land = levels[0].pts;
+  const landMat = land.material;
+  let landGeometry = land.geometry;
 
-  const buildLandDots = (atlas: Atlas): THREE.BufferGeometry => {
+  /** The land raster every level samples, made once per atlas. */
+  type Raster = { data: Uint8ClampedArray; w: number; h: number };
+  const rasterOf = (atlas: Atlas): Raster => {
     const canvas = rasteriseLand(atlas.features);
     const { width: w, height: h } = canvas;
-    const { data } = canvas.getContext('2d')!.getImageData(0, 0, w, h);
+    return { data: canvas.getContext('2d')!.getImageData(0, 0, w, h).data, w, h };
+  };
+  const buildLandDots = ({ data, w, h }: Raster, count: number, size: number): THREE.BufferGeometry => {
     const pts: number[] = [];
-    for (let i = 0; i < LAND_DOTS; i++) {
+    for (let i = 0; i < count; i++) {
       // Fibonacci lattice: even coverage of the whole sphere.
-      const lat = (Math.asin(1 - (2 * (i + 0.5)) / LAND_DOTS) * 180) / Math.PI;
+      const lat = (Math.asin(1 - (2 * (i + 0.5)) / count) * 180) / Math.PI;
       const lon = ((i * 137.50776405) % 360) - 180;
       const x = Math.min(w - 1, Math.floor(((lon + 180) / 360) * w));
       const y = Math.min(h - 1, Math.floor(((90 - lat) / 180) * h));
@@ -226,7 +291,7 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
     const s = g.getAttribute('size') as THREE.BufferAttribute;
     for (let i = 0; i < n; i++) {
       c.setXYZW(i, LAND_COLOR.r, LAND_COLOR.g, LAND_COLOR.b, LAND_ALPHA);
-      s.setX(i, LAND_SIZE);
+      s.setX(i, size);
     }
     g.computeBoundingSphere();
     return g;
@@ -271,7 +336,7 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
       group.add(bar);
     }
   }
-  group.add(land, points, ...bars);
+  group.add(...levels.map((l) => l.pts), points, ...bars);
 
   let miniGroup: THREE.Group | null = null;
   let miniLand: THREE.Points | null = null;
@@ -296,11 +361,22 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
     },
     isVisible: (index) => visible[index] === 1,
     setAtlas: (atlas) => {
-      const next = buildLandDots(atlas);
+      const raster = rasterOf(atlas);
+      const next = buildLandDots(raster, levels[0].count, levels[0].size);
       land.geometry = next;
       if (miniLand) miniLand.geometry = next;
       landGeometry.dispose();
       landGeometry = next;
+      // The finer levels: built after the base level is on screen, one per idle
+      // slot, in order. Each coarser level fades out only once its successor is in.
+      levels.slice(1).forEach((l, i) =>
+        setTimeout(() => {
+          const g = buildLandDots(raster, l.count, l.size);
+          l.pts.geometry.dispose();
+          l.pts.geometry = g;
+          levels[i].pts.material.uniforms.uLast.value = 0;
+        }, 200 * (i + 1)),
+      );
       place(atlas);
     },
     setMode: (mode) => {
@@ -314,6 +390,7 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
       fadeRange.uFadeFrom.value = from;
       fadeRange.uFadeFar.value = far;
       const inside = d < DOME_R;
+      lodOn.value = inside ? 0 : 1;
       bars.forEach((bar, i) => {
         const b = barInfo[i];
         bar.visible = b.on && !inside && b.dir.dot(camera.position) > 0;
