@@ -7,7 +7,7 @@
 // spread on a small ring, and it beams to what that bot fetched from there. A bot
 // with no known country falls back to its operator's headquarters, else parks
 // above the north pole; nothing orbits, since no data justifies a trajectory.
-// What is being read glows. An article gets a pulsing ring where it is set (its
+// What is being read glows. An article gets a ring closing in where it is set (its
 // photos' location, else its country) in its blog's colour when a person reads it (orange Travelmemo, grey Reisememo), else the bot's tier colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
 // count. An entity an agent fetched gets no ring: its outline lights up and
@@ -108,7 +108,7 @@ function dotTexture(): THREE.CanvasTexture {
 
 /**
  * A reader's city: a crisp, still ring (no blur, no pulse), so where a visitor
- * is reads apart from the soft, breathing ring where the article is set.
+ * is reads apart from the soft ring closing in where the article is set.
  */
 function originTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -420,11 +420,13 @@ export class LiveLayer {
         pin.material.opacity = 0.35 + 0.1 * Math.sin(t * 2.4 + pin.userData.phase);
         pin.scale.setScalar(1.3 * (1 + 0.15 * Math.sin(t * 2.4 + pin.userData.phase)));
       }
-    // Target rings breathe outward and fade, like a ping.
+    // Target rings close in on the article, a pseudo zoom-in: each starts wide
+    // and faint, contracts as it brightens, and fades out just before the
+    // centre, so the loop restarts unseen.
     for (const ring of this.rings) {
       const k = ((t * 0.6 + ring.userData.phase) % 1 + 1) % 1;
-      ring.scale.setScalar(ring.userData.base * (0.7 + 0.6 * k));
-      ring.material.opacity = 0.95 * (1 - k * 0.8);
+      ring.scale.setScalar(ring.userData.base * (1.3 - 0.6 * k));
+      ring.material.opacity = 0.95 * THREE.MathUtils.smoothstep(k, 0, 0.6) * (1 - THREE.MathUtils.smoothstep(k, 0.85, 1));
     }
     // Dashes flow toward the article. Each arc has its own uniform; they share one clock.
     for (const arc of this.arcs) (arc.userData.shift as { value: number }).value = -t * 3;
