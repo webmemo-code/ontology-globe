@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, hash } from './live';
-import { frameBeamInside, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { frameBeamInside, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type Obstacle, type FlightResult, type PathPolicy } from './camera';
 import type { LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -748,10 +748,20 @@ export class GraphScene {
     L.fill = b.face || orphan ? 0 : dim ? 0.07 : 0.85;
     L.line = b.face ? 0 : !present ? 0.1 : dim ? 0.08 : orphan ? 0.45 : 0.9;
     // Ghosts: the same shapes, nearly gone; orphans fainter still.
+    // An inside agent shot (#68, B1): every other entity steps back. The white
+    // burn in those shots came from nearby lit cylinders: their glass streak
+    // (made matte in paint()) and their bright stacked fill, not their glow
+    // alone, so fill, colour, glow and halo all drop.
+    const stepBack = !!this.followFocus && this.followFocus !== node.key;
+    if (stepBack) {
+      L.fill *= 0.25;
+      L.color.multiplyScalar(0.5);
+      L.emissive *= 0.15;
+    }
     L.ghostFill = Math.min(L.fill, GHOST_FILL);
     L.ghostLine = Math.min(L.line, orphan ? 0.12 : GHOST_LINE);
     const tier = present && !orphan && !dim && !b.face ? s!.perf : 'none';
-    L.haloOn = (tier === 'top10' || tier === 'top25') && this.view !== 'system' && node.class !== 'topics';
+    L.haloOn = (tier === 'top10' || tier === 'top25') && this.view !== 'system' && node.class !== 'topics' && !stepBack;
     L.haloOp = tier === 'top10' ? 0.6 : 0.3;
     b.halo.scale.setScalar(b.size * (tier === 'top10' ? 3.4 : 2.4));
     if (b.face) {
@@ -894,7 +904,9 @@ export class GraphScene {
     m.emissiveIntensity = L.emissive * s;
     // Glass like the How it works tiles once lit (#33): low roughness lets the
     // under-light's streak cross the bloom threshold; ghosts stay matte and calm.
-    m.roughness = THREE.MathUtils.lerp(GHOST_ROUGH, LIT_ROUGH, s);
+    // An inside agent shot (#68, B1) keeps every cylinder matte: from inside, at
+    // grazing angles, the glass streak was what burned white under bloom.
+    m.roughness = THREE.MathUtils.lerp(GHOST_ROUGH, this.followFocus ? GHOST_ROUGH : LIT_ROUGH, s);
     m.opacity = THREE.MathUtils.lerp(L.ghostFill, L.fill, s);
     const o = v.outline.material;
     const fetched = this.view === 'graph' ? this.liveEntities.get(v.key) : undefined;
@@ -1213,10 +1225,35 @@ export class GraphScene {
    * framed from inside, along its beam (#54); everything else, readers and
    * article fetches, from outside (framePair).
    */
-  private pairShot(path: { points: THREE.Vector3[]; interior: boolean }): CameraKeyframe {
+  private pairShot(path: { points: THREE.Vector3[]; interior: boolean; entity?: string }): CameraKeyframe {
     const eye = this.camera.position;
-    if (path.interior) return frameBeamInside(path.points[0], path.points[path.points.length - 1], { ...this.frameTans(), eye });
+    if (path.interior) {
+      const dest = path.points[path.points.length - 1];
+      return frameBeamInside(path.points[0], dest, { ...this.frameTans(), eye }, this.obstaclesNear(dest, path.entity));
+    }
     return framePair(path.points, { ...this.frameTans(), eye }).key;
+  }
+
+  /**
+   * Bounding spheres of the entities drawn near `at`, the shot's entity left
+   * out (#68, B2): flags, logos and faces by their emblem, the rest by their
+   * cylinder, so a big emblem counts as big even when its centre is far.
+   */
+  private obstaclesNear(at: THREE.Vector3, skip?: string): Obstacle[] {
+    const out: Obstacle[] = [];
+    const box = new THREE.Box3();
+    const sphere = new THREE.Sphere();
+    for (const v of this.views.values()) {
+      // By what the entity is, not how lit it is now: the spotlight lights the
+      // ones near the camera only once the camera is there.
+      if (v.key === skip || (v.lit.fill <= 0 && !(v.face && v.lit.face > 0.15))) continue;
+      const shape = v.face?.visible ? v.face : v.mesh.visible ? v.mesh : null;
+      if (!shape) continue;
+      box.setFromObject(shape).getBoundingSphere(sphere);
+      if (sphere.center.distanceTo(at) - sphere.radius > 45) continue;
+      out.push({ centre: sphere.center.clone(), radius: sphere.radius });
+    }
+    return out;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
