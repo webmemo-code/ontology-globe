@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, envelope, type FlashRow } from './agentFlash';
+import { BORDER_FADE_S, FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, borderEnvelope, envelope, type FlashRow } from './agentFlash';
 
 describe('envelope (#80)', () => {
   it('flickers, then fades to the floor and stays there', () => {
@@ -15,6 +15,20 @@ describe('envelope (#80)', () => {
     const values = Array.from({ length: 20 }, (_, i) => envelope(i * 0.05, true));
     values.slice(1).forEach((v, i) => expect(v).toBeGreaterThanOrEqual(values[i]));
     expect(Math.max(...values)).toBeLessThanOrEqual(FLOOR + 1e-9);
+  });
+});
+
+describe('borderEnvelope (#83)', () => {
+  it('fades along a smooth sine from 1 to nothing within two seconds', () => {
+    expect(borderEnvelope(-1)).toBe(0);
+    expect(borderEnvelope(0)).toBe(1);
+    expect(borderEnvelope(BORDER_FADE_S / 2)).toBeCloseTo(0.5, 6);
+    expect(borderEnvelope(0.02)).toBeGreaterThan(0.99);
+    expect(borderEnvelope(BORDER_FADE_S - 0.02)).toBeLessThan(0.01);
+    expect(borderEnvelope(BORDER_FADE_S)).toBe(0);
+    expect(borderEnvelope(60)).toBe(0);
+    const v = Array.from({ length: 20 }, (_, i) => borderEnvelope((i / 20) * BORDER_FADE_S));
+    v.slice(1).forEach((x, i) => expect(x).toBeLessThan(v[i]));
   });
 });
 

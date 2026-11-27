@@ -110,6 +110,31 @@ export function botIcon(bot: string): string | null {
   return file ? `bot-icons/${file}` : null;
 }
 
+// Each operator's most recognisable brand colour, for the country border its
+// fetch lights up (#83). Brands whose identity is black or white take their
+// best-known accent instead, so the line shows on the dark globe.
+const BRAND_COLORS: Record<string, string> = {
+  openai: '#10A37F', // ChatGPT green
+  anthropic: '#D97757', // Claude orange
+  perplexity: '#20808D', // Perplexity turquoise
+  google: '#4285F4', // Google blue
+  apple: '#A2AAAD', // Apple silver
+  meta: '#0081FB', // Meta blue
+  amazon: '#FF9900', // Amazon orange
+  bytedance: '#3C8CFF', // ByteDance blue
+  mistral: '#FA520F', // Mistral orange
+  cohere: '#FF7759', // Cohere coral
+  duckduckgo: '#DE5833', // DuckDuckGo orange-red
+  commoncrawl: '#2A6EBB', // Common Crawl blue
+  diffbot: '#3BB273', // Diffbot green
+};
+
+/** The crawler's operator brand colour, or null when there is none. */
+export function brandColor(bot: string): string | null {
+  const brand = BOT_OPERATOR[bot] ?? BOT_BRAND[bot];
+  return (brand && BRAND_COLORS[brand]) || null;
+}
+
 /** Operator key and record, or null when unknown. */
 export function operatorOf(bot: string): [string, Operator] | null {
   const key = BOT_OPERATOR[bot];
@@ -143,6 +168,28 @@ export interface LiveSnapshot {
 }
 
 export type LiveBySite = Partial<Record<Site, LiveSnapshot>>;
+
+/** Rows the AI agents panel lists; the scene flashes only these (#83). */
+export const AGENT_ROWS = 5;
+
+/**
+ * The fetches the AI agents panel lists: newest first across blogs, deduplicated
+ * by the panel's row id, the first AGENT_ROWS of them. The panel skips rows whose
+ * post or entity it cannot resolve, so it may list a few more; never fewer.
+ */
+export function listedFetches(data: LiveBySite | null): { id: string; site: string; bot: LiveBot }[] {
+  const seen = new Set<string>();
+  const rows: { id: string; site: string; bot: LiveBot }[] = [];
+  const all = Object.entries(data ?? {}).flatMap(([site, snap]) => (snap?.bots ?? []).map((bot) => ({ site, bot })));
+  for (const { site, bot } of all.sort((x, y) => x.bot.seconds_ago - y.bot.seconds_ago)) {
+    const id = `b:${site}:${bot.bot}:${bot.route}:${bot.post ?? bot.entity}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    rows.push({ id, site, bot });
+    if (rows.length === AGENT_ROWS) break;
+  }
+  return rows;
+}
 
 const HOSTS: Record<Site, string> = { travelmemo: 'https://travelmemo.com', reisememo: 'https://reisememo.ch' };
 

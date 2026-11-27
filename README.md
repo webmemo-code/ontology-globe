@@ -77,9 +77,10 @@ them.
   in the AI agents panel carries the company's site icon
   (`node scripts/fetch-bot-icons.mjs` refreshes them), its purpose and route
   as one line after the name, and a blue EN or grey DE chip saying which blog
-  was fetched. A new fetch flashes its target in the agent's colour: a place
-  flickers its country's border, a topic a dot over its cylinder. Both then
-  settle to a faint glow while the agent stays in the feed.
+  was fetched. A new fetch listed in the panel flashes its target in the agent's
+  colour: a place lights its country's border, which fades out along a sine
+  within two seconds; a topic gets a dot over its cylinder, which settles to a faint glow
+  while the agent stays in the feed.
 - **Follow** (in the Now reading header, on by default): the feed is checked
   every 30 seconds, and the camera flies to each newly seen reader or agent so
   their location and destination are both in view (just the destination when

@@ -11,9 +11,9 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
-import { FlashQueue, envelope, type FlashKind, type FlashRow } from './agentFlash';
+import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
 import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
-import { tierOf, type LiveBySite } from '../data/live';
+import { brandColor, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
@@ -39,6 +39,9 @@ const DRIFT_SPEED = 0.02;
 const TOUR_DRIFT = (8 * Math.PI) / 180;
 const TOUR_DRIFT_S = 8;
 const UP = new THREE.Vector3(0, 1, 0);
+/** An agent flash's country border: line width in px and its opacity at the peak (#83). */
+const BORDER_PX = 1.5;
+const BORDER_PEAK = 0.8;
 
 /** True borders on the same rotated globe, as line segments just inside the skin. */
 function borderSegments(geometry: Geometry, out: number[]) {
@@ -548,16 +551,15 @@ export class GraphScene {
    */
   private queueFlashes(data: LiveBySite | null) {
     const rows: FlashRow[] = [];
-    for (const [site, snap] of Object.entries(data ?? {})) {
-      for (const b of snap?.bots ?? []) {
-        if (b.kind !== 'entity' || !b.entity) continue;
-        const node = this.nodes.get(b.entity);
-        const target: [string, FlashKind] | null =
-          node?.class === 'topics' ? [b.entity, 'topic'] : node?.class === 'places' ? ((c) => (c ? [c, 'country'] : null))(ancestorOfType(this.tree, this.nodes, b.entity, 'Country')) : null;
-        if (!target) continue;
-        const row = `b:${site}:${b.bot}:${b.route}:${b.entity}`;
-        rows.push({ id: row, key: target[0], kind: target[1], color: TIER_COLORS[tierOf(b.bot)], site, age: b.seconds_ago });
-      }
+    // Only the fetches the AI agents panel lists: no flash without a row (#83).
+    for (const { id, site, bot: b } of listedFetches(data)) {
+      if (b.kind !== 'entity' || !b.entity) continue;
+      const node = this.nodes.get(b.entity);
+      const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, b.entity, 'Country') : null;
+      const target: [string, FlashKind] | null = node?.class === 'topics' ? [b.entity, 'topic'] : country ? [country, 'country'] : null;
+      // A border takes the operator's brand colour; a topic keeps the tier colour of the agent markers.
+      const color = (target?.[1] === 'country' && brandColor(b.bot)) || TIER_COLORS[tierOf(b.bot)];
+      if (target) rows.push({ id, key: target[0], kind: target[1], color, site, age: b.seconds_ago });
     }
     this.flashes.sync(rows);
   }
@@ -571,7 +573,7 @@ export class GraphScene {
     for (const f of this.flashes.flashes.values()) {
       const color = this.mode === 'both' ? f.color : f.siteColors.get(this.mode);
       if (!on || f.start === null || !color) continue;
-      const e = envelope(t - f.start, this.reduced.matches);
+      const e = f.kind === 'country' ? borderEnvelope(t - f.start) : envelope(t - f.start, this.reduced.matches);
       shown.add(f.key);
       if (f.kind === 'country') {
         let fl = this.flashLines.get(f.key);
@@ -581,7 +583,8 @@ export class GraphScene {
           borderSegments(feat.geometry, segs);
           if (!segs.length) continue;
           const { clientWidth: w, clientHeight: h } = this.container;
-          const mat = new LineMaterial({ color, linewidth: 2.5, transparent: true, depthWrite: false });
+          // Thin and additive: the bright core crosses the bloom threshold at the peak and the glow shrinks away with the fade.
+          const mat = new LineMaterial({ color, linewidth: BORDER_PX, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
           mat.resolution.set(w, h);
           const positions = new Float32Array(segs);
           // Allocate once, with bounds that cover the full border. Only the
@@ -618,8 +621,8 @@ export class GraphScene {
             line.geometry.instanceCount = count / 6;
             if (changed) buffer.needsUpdate = true;
           }
-          fl.mat.color.set(color);
-          fl.mat.opacity = e;
+          fl.mat.color.set(color).lerp(this.tmpColor.set(0xffffff), 0.35);
+          fl.mat.opacity = BORDER_PEAK * e;
           fl.line.visible = e > 0.003 && fl.line.geometry.instanceCount > 0;
         }
       } else {

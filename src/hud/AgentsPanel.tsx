@@ -1,6 +1,6 @@
 import { PanelHead } from './PanelHead';
 import { TIER_LABELS, routeLabel, type ReadingRow } from './derive';
-import { botIcon } from '../data/live';
+import { AGENT_ROWS, botIcon } from '../data/live';
 
 /** AI agent fetches, newest first; each row flies to its target. */
 export function AgentsPanel({ rows, count, onPick, active }: { rows: ReadingRow[]; count: number; onPick: (key: string, row?: string) => void; active?: string | null }) {
@@ -8,7 +8,7 @@ export function AgentsPanel({ rows, count, onPick, active }: { rows: ReadingRow[
     <section className="hud panel agents" aria-label="AI agents">
       <PanelHead dot="blue" label="AI agents" right={<span key={count} className="flick">{count} fetches</span>} />
       <ul className="rows">
-        {rows.slice(0, 5).map((r) => (
+        {rows.slice(0, AGENT_ROWS).map((r) => (
           <li key={r.id} className={r.id === active ? 'flick following' : 'flick'} aria-current={r.id === active || undefined}>
             <button onClick={() => r.pick && onPick(r.pick, r.id)} title={r.what}>
               <span className="who">

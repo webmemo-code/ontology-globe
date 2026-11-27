@@ -35,7 +35,20 @@ export function envelope(s: number, reduced = false): number {
   return 1 - (1 - FLOOR) * smoothstep(0, FADE_S, s - FLICKER_S);
 }
 
-export type FlashKind = 'country' | 'topic';
+/** A country border fades out over this many seconds, to nothing. */
+export const BORDER_FADE_S = 2;
+
+/**
+ * Border opacity `s` seconds after its flash started (#83): a half cosine from 1
+ * down to 0, flat at both ends so it neither lingers at the top nor snaps off at
+ * the bottom. No flicker, no floor.
+ */
+export function borderEnvelope(s: number): number {
+  if (s < 0 || s >= BORDER_FADE_S) return 0;
+  return 0.5 * (1 + Math.cos(Math.PI * (s / BORDER_FADE_S)));
+}
+
+export type FlashKind ='country' | 'topic';
 
 export interface FlashRow {
   id: string;
