@@ -252,7 +252,10 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
       minPx: 1.5,
       maxPx: LAND_MAX_PX, // the same cap at every level: finer levels add dots, not smaller ones
       refSize: size,
-      lod: { spacing: latticeSpacing(count, LAND_R), first: k === 0, last: k === LAND_LEVELS - 1 },
+      // Every level starts as the last: it hands over only once the next one's
+      // geometry is installed (#71 review), so a close view during startup
+      // keeps the coarse land instead of showing blank land.
+      lod: { spacing: latticeSpacing(count, LAND_R), first: k === 0, last: true },
     });
     const pts = track(new THREE.Points(dotGeometry(0), mat));
     pts.renderOrder = -2;
@@ -364,12 +367,14 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
       if (miniLand) miniLand.geometry = next;
       landGeometry.dispose();
       landGeometry = next;
-      // The finer levels: built after the base level is on screen, one per idle slot.
+      // The finer levels: built after the base level is on screen, one per idle
+      // slot, in order. Each coarser level fades out only once its successor is in.
       levels.slice(1).forEach((l, i) =>
         setTimeout(() => {
           const g = buildLandDots(raster, l.count, l.size);
           l.pts.geometry.dispose();
           l.pts.geometry = g;
+          levels[i].pts.material.uniforms.uLast.value = 0;
         }, 200 * (i + 1)),
       );
       place(atlas);

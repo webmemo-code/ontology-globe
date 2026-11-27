@@ -33,6 +33,13 @@ describe('lodWeight (#67)', () => {
     }
   });
 
+  it('keeps the coarser level whole while the finer one is still loading', () => {
+    // Before a level's successor is installed it counts as the last one (articles.ts).
+    for (const s0 of [T, 2 * T, 5 * T, 40 * T]) expect(lodWeight(s0, T, true, true)).toBe(1);
+    const s1 = 5 * T; // level 1 fully in charge would hand to level 2
+    expect(lodWeight(s1, T, false, true)).toBe(1);
+  });
+
   it('measures spacing from the lattice, so 4x the dots means half the spacing', () => {
     expect(latticeSpacing(4 * 26000, 59) / latticeSpacing(26000, 59)).toBeCloseTo(0.5, 6);
   });
