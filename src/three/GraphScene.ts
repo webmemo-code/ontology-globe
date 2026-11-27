@@ -11,7 +11,7 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
-import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
+import { FlashQueue, borderEnvelope, envelope, flashOnArrival, type FlashKind, type FlashRow } from './agentFlash';
 import { beamToSkin, frameAgent, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, proxyAnchor, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import { agentTargets, brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
@@ -558,14 +558,27 @@ export class GraphScene {
     // Exactly the rows the AI agents panel lists, by the same selector: no flash without a row (#83).
     for (const { id, site, bot: b } of listedFetches(this.liveData, this.mode, fetchResolver(this.postsByKey, this.nodes))) {
       if (b.kind !== 'entity' || !b.entity) continue;
-      const node = this.nodes.get(b.entity);
-      const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, b.entity, 'Country') : null;
-      const target: [string, FlashKind] | null = node?.class === 'topics' ? [b.entity, 'topic'] : country ? [country, 'country'] : null;
+      const target = this.flashTarget(b.entity);
       // A border takes the operator's brand colour; a topic keeps the tier colour of the agent markers.
       const color = (target?.[1] === 'country' && brandColor(b.bot)) || TIER_COLORS[tierOf(b.bot)];
       if (target) rows.push({ id, key: target[0], kind: target[1], color, site, age: b.seconds_ago });
     }
     this.flashes.sync(rows);
+  }
+
+  /** What an agent fetch of `entity` flashes: a topic itself, a place its country's border; null for anything else. */
+  private flashTarget(entity: string): [string, FlashKind] | null {
+    const node = this.nodes.get(entity);
+    if (node?.class === 'topics') return [entity, 'topic'];
+    const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, entity, 'Country') : null;
+    return country ? [country, 'country'] : null;
+  }
+
+  /** A flight to a live row's pair ended: an agent's target flashes now, in front of the camera (#85). */
+  private flashOnLanding(row: string, result: FlightResult) {
+    const entity = this.live.pathOf(row)?.entity;
+    const target = entity ? this.flashTarget(entity) : null;
+    flashOnArrival(this.flashes, target?.[0] ?? null, result, this.clock.getElapsedTime());
   }
 
   /** Per frame: start queued flashes and draw them, from outside the globe in the globe view only. */
@@ -1262,7 +1275,7 @@ export class GraphScene {
     // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(this.pairShot(path, pair), 1900, owner);
+    if (path) return void this.flyTo(this.pairShot(path, pair), 1900, owner).then((r) => this.flashOnLanding(pair!, r));
     this.live.setProxy(null);
     const shot = this.shotFor(key);
     if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
@@ -1363,6 +1376,7 @@ export class GraphScene {
     if (!path) return 'none';
     const reduced = this.reduced.matches;
     void this.flyTo(this.pairShot(path, row), reduced ? 1 : 2400, 'follow').then((r) => {
+      this.flashOnLanding(row, r);
       if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
     return 'started';
