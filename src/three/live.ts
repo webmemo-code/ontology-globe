@@ -1,4 +1,4 @@
-// The live layer on the globe: readers as glowing dots at their country (city
+// The live layer on the globe: readers as crisp still rings at their country (city
 // jittered, never a precise location) with a flowing arc to the article
 // they read (ending where the article's photos were taken, else at its country's
 // centre); AI agents as satellites coloured by what they fetch for (training,
@@ -7,7 +7,7 @@
 // spread on a small ring, and it beams to what that bot fetched from there. A bot
 // with no known country falls back to its operator's headquarters, else parks
 // above the north pole; nothing orbits, since no data justifies a trajectory.
-// What is being read glows. An article gets a pulsing ring where it is set (its
+// What is being read glows. An article gets a ring closing in where it is set (its
 // photos' location, else its country) in its blog's colour when a person reads it (orange Travelmemo, grey Reisememo), else the bot's tier colour, with its
 // title as a label; a ring grows a little with more readers, never shows a
 // count. An entity an agent fetched gets no ring: its outline lights up and
@@ -15,7 +15,7 @@
 // so pings on the skin are articles and lit outlines inside are entities.
 // No numbers anywhere: one dot per reader city (a little larger with more
 // activity there: the feed sends presence rows of city and article, not
-// people, so size says "busier", never "more readers"), one satellite per bot. Dots are small solid cores, not additive
+// people, so size says "busier", never "more readers"), one satellite per bot. Reader marks are crisp rings dimmed below the bloom, not additive
 // halos: Switzerland is ~5 units wide on a 60-unit globe, and a few dozen
 // stacked halos burned into one white bloom. A read that stays local (reader
 // and article within LOCAL_HOP of each other, which is most Swiss traffic)
@@ -106,6 +106,28 @@ function dotTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
+/**
+ * A reader's city: a crisp, still ring (no blur, no pulse), so where a visitor
+ * is reads apart from the soft ring closing in where the article is set.
+ */
+function originTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 22;
+  ctx.beginPath();
+  ctx.arc(128, 128, 104, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(128, 128, 26, 0, Math.PI * 2);
+  ctx.fill();
+  const t = new THREE.CanvasTexture(c);
+  t.anisotropy = 4;
+  return t;
+}
+
 /** A thin bright ring on a transparent canvas, for the target pulses. */
 function ringTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -150,6 +172,7 @@ export class LiveLayer {
   private sats = new Map<string, Satellite>();
   private dotTex = dotTexture();
   private ringTex = ringTexture();
+  private originTex = originTexture();
   private rings: THREE.Sprite[] = [];
   private targets = new Map<string, Target>();
   /** Entities agents fetched -> the colour their box lights up in; the first bot listed decides. */
@@ -282,9 +305,10 @@ export class LiveLayer {
   /** A reader dot per city; size grows with the log of its presence rows (activity, not people) and never shows a count. */
   private drawDots() {
     for (const seat of this.seats.values()) {
-      const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.dotTex, color: READER_DIM, transparent: true, depthWrite: false }));
+      // Dimmed below the bloom threshold, so the ring keeps its edge.
+      const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.originTex, color: READER_DIM, transparent: true, depthWrite: false }));
       dot.position.copy(seat.at);
-      dot.scale.setScalar(0.9 + 0.35 * Math.log2(seat.n));
+      dot.scale.setScalar(1.5 + 0.5 * Math.log2(seat.n));
       dot.userData.phase = seat.phase;
       this.readerGroup.add(dot);
       this.dots.push(dot);
@@ -396,12 +420,13 @@ export class LiveLayer {
         pin.material.opacity = 0.35 + 0.1 * Math.sin(t * 2.4 + pin.userData.phase);
         pin.scale.setScalar(1.3 * (1 + 0.15 * Math.sin(t * 2.4 + pin.userData.phase)));
       }
-    for (const dot of this.dots) dot.material.opacity = 0.8 + 0.2 * Math.sin(t * 2.2 + dot.userData.phase);
-    // Target rings breathe outward and fade, like a ping.
+    // Target rings close in on the article, a pseudo zoom-in: each starts wide
+    // and faint, contracts as it brightens, and fades out just before the
+    // centre, so the loop restarts unseen.
     for (const ring of this.rings) {
       const k = ((t * 0.6 + ring.userData.phase) % 1 + 1) % 1;
-      ring.scale.setScalar(ring.userData.base * (0.7 + 0.6 * k));
-      ring.material.opacity = 0.95 * (1 - k * 0.8);
+      ring.scale.setScalar(ring.userData.base * (1.3 - 0.6 * k));
+      ring.material.opacity = 0.95 * THREE.MathUtils.smoothstep(k, 0, 0.6) * (1 - THREE.MathUtils.smoothstep(k, 0.85, 1));
     }
     // Dashes flow toward the article. Each arc has its own uniform; they share one clock.
     for (const arc of this.arcs) (arc.userData.shift as { value: number }).value = -t * 3;
