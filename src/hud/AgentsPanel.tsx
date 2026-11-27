@@ -17,11 +17,11 @@ export function AgentsPanel({ rows, count, onPick, active }: { rows: ReadingRow[
                   {r.bot && botIcon(r.bot) && <img src={botIcon(r.bot)!} alt="" width={14} height={14} loading="lazy" />}
                 </span>
                 {r.who}
+                {/* Purpose and route as one quiet meta line (#65, Set 2): the blog chip is the only chip. */}
+                <span className="meta">{[TIER_LABELS[r.tier!], routeLabel(r.route)].filter(Boolean).join(' · ')}</span>
               </span>
-              <span className="tag tag-bot">{TIER_LABELS[r.tier!]}</span>
               <span className="what">→ {r.what}</span>
-              {routeLabel(r.route) && <span className="route-pill">{routeLabel(r.route)}</span>}
-              {/* Which blog the agent fetched from: blue like the other bot chips, DE grey as on reader rows. */}
+              {/* Which blog the agent fetched from: blue like the bot design, DE grey as on reader rows. */}
               <span className={`tag tag-site${r.site === 'reisememo' ? ' de' : ''}`}>{r.site === 'travelmemo' ? 'EN' : 'DE'}</span>
             </button>
           </li>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import type { SiteMode } from '../data/types';
+import type { LiveStatus } from './liveStatus';
 
 interface Opt<K extends string> {
   key: K;
@@ -16,7 +17,8 @@ interface TopBarProps<V extends string> {
   onMode: (m: SiteMode) => void;
   live: boolean;
   onLive: () => void;
-  liveText: string;
+  /** What the feed delivers while Live is on (liveStatus). */
+  liveStatus: LiveStatus;
   search: ReactNode;
   onTour: () => void;
   onReset: () => void;
@@ -36,6 +38,36 @@ function Brand() {
         <span className="t">Travel</span> Ontology
       </span>
     </div>
+  );
+}
+
+/** The orange play glyph: the only orange on the tour button (#65). */
+function PlayGlyph() {
+  return (
+    <svg className="glyph" width="9" height="10" viewBox="0 0 9 10" aria-hidden>
+      <path d="M0.5 0.5v9l8-4.5z" />
+    </svg>
+  );
+}
+
+/**
+ * Live as an on-air pill (#65, lookbook B). Off: greyed, an orange arrow before
+ * "Offline". On: steady green "Live · 30 min", or amber with what is missing
+ * while the feed is degraded. The accessible name stays "Live activity" and
+ * aria-pressed carries on/off; the label and tooltip carry the feed state.
+ */
+function LivePill({ on, status, compact, onClick }: { on: boolean; status: LiveStatus; compact: boolean; onClick: () => void }) {
+  const tone = !on ? 'off' : status.tone === 'ok' ? 'on' : 'on degraded';
+  // On a phone the degraded state keeps a short text cue, not colour alone (#73 review).
+  const text = !on ? 'Offline' : compact ? status.tiny : `Live · ${status.short}`;
+  return (
+    <button className={`live-pill ${tone}`} onClick={onClick} aria-pressed={on} aria-label="Live activity" aria-describedby="live-pill-state" title={on ? status.long : 'Live activity is off'}>
+      {on ? <span className="live-dot" aria-hidden /> : <PlayGlyph />}
+      {text}
+      <span id="live-pill-state" className="sr-only">
+        {on ? status.long : 'Off'}
+      </span>
+    </button>
   );
 }
 
@@ -75,14 +107,7 @@ export function TopBar<V extends string>(p: TopBarProps<V>) {
       ))}
     </div>
   );
-  const liveBtn = graph && (
-    <div className="row live-row">
-      <button className={p.live ? 'on' : ''} onClick={p.onLive} aria-pressed={p.live}>
-        <span className="live-dot" /> Live
-      </button>
-      {!p.mobile && p.live && <span className="live-status">{p.liveText}</span>}
-    </div>
-  );
+  const liveBtn = graph && <LivePill on={p.live} status={p.liveStatus} compact={p.mobile} onClick={p.onLive} />;
 
   if (p.mobile)
     return (
@@ -103,7 +128,8 @@ export function TopBar<V extends string>(p: TopBarProps<V>) {
                 <path d="M3 2v3h3" />
               </svg>
             </button>
-            <button className="primary" onClick={p.onTour}>
+            <button className="tour-btn" onClick={p.onTour}>
+              <PlayGlyph />
               Tour
             </button>
           </div>
@@ -129,13 +155,16 @@ export function TopBar<V extends string>(p: TopBarProps<V>) {
       {tabs}
       {modes}
       {p.search}
-      {liveBtn}
-      <div className="row">
-        <button className="primary" onClick={p.onTour}>
-          ▶ Guided tour
+      <div className="row actions">
+        <button className="ghost tour-btn" onClick={p.onTour}>
+          <PlayGlyph />
+          Guided tour
         </button>
-        <button onClick={p.onReset}>Reset view</button>
+        <button className="ghost" onClick={p.onReset}>
+          Reset view
+        </button>
       </div>
+      {liveBtn}
       <div className="topbar-stats">
         <Stat n={p.totals.entities} label="entities" />
         <Stat n={p.totals.posts} label="articles" />
