@@ -181,6 +181,36 @@ export function beamToSkin(points: THREE.Vector3[], r = DOME_R): THREE.Vector3[]
   return out.length >= 2 ? out : [points[0].clone(), points[points.length - 1].clone().setLength(r)];
 }
 
+/**
+ * An AI agent fetching an entity, framed over the agent's shoulder (#82): the
+ * satellite in the foreground, the skin above the entity (where its country
+ * flashes) behind it. The eye sits on the far side of the satellite, 15 degrees
+ * off the satellite -> destination line so the satellite does not cover the
+ * destination. When the satellite is below the destination's horizon no such
+ * shot sees both, and the pair is framed as any other.
+ */
+export function frameAgent(sat: THREE.Vector3, entity: THREE.Vector3, o: FrameOpts): PairFrame {
+  const dest = entity.clone().setLength(DOME_R);
+  const out = dest.clone().normalize();
+  const back = sat.clone().sub(dest);
+  // Over the shoulder needs the satellite above the destination's horizon, with some margin.
+  if (back.clone().normalize().dot(out) > 0.15) {
+    let across = new THREE.Vector3().crossVectors(back, out);
+    across = across.lengthSq() < 1e-6 ? perpendicular(back.clone().normalize()) : across.normalize();
+    const tilt = THREE.MathUtils.degToRad(15);
+    const sides = [1, -1].map((s) => back.clone().normalize().applyAxisAngle(across, s * tilt));
+    // Of the two tilts, the one that lifts the eye further off the globe.
+    const dir = sides[0].dot(out) >= sides[1].dot(out) ? sides[0] : sides[1];
+    const target = dest.clone().lerp(sat, 0.3);
+    const points = [sat, dest];
+    const dist = Math.max(fitDistance(points, target, dir, o), sat.distanceTo(target) * 1.25);
+    const eye = target.clone().addScaledVector(dir, dist);
+    if (eye.length() > DOME_R * 1.2 && visibleFrom(eye, dest) && eye.distanceTo(sat) < eye.distanceTo(dest))
+      return { key: key(eye, target), full: true };
+  }
+  return framePair([sat, dest], o);
+}
+
 /** The destination from outside, 35 degrees away from the origin's side. */
 function frameDestination(from: THREE.Vector3, to: THREE.Vector3): CameraKeyframe {
   const out = to.clone().normalize();

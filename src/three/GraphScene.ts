@@ -12,7 +12,7 @@ import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
 import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
-import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { beamToSkin, frameAgent, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
 import { agentTargets, brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
@@ -1377,8 +1377,13 @@ export class GraphScene {
    * its beam down to where it enters the skin (beamToSkin).
    */
   private pairShot(path: { points: THREE.Vector3[]; interior: boolean }): CameraKeyframe {
-    const eye = this.camera.position;
-    return framePair(path.interior ? beamToSkin(path.points) : path.points, { ...this.frameTans(), eye }).key;
+    const o = { ...this.frameTans(), eye: this.camera.position };
+    if (!path.interior) return framePair(path.points, o).key;
+    // An agent: over its shoulder onto the skin above its target (#82). Topics
+    // on the wheel near the centre have no place on the skin: frame the beam.
+    const sat = path.points[0];
+    const entity = path.points[path.points.length - 1];
+    return entity.length() > DOME_R * 0.5 ? frameAgent(sat, entity, o).key : framePair(beamToSkin(path.points), o).key;
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
