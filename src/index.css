@@ -223,11 +223,14 @@ section h3 { font-family: var(--mono); font-size: var(--fs-label); font-weight: 
   .readers-strip b { font-family: var(--mono); font-size: var(--fs-title); font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
   .readers-strip .muted { font-size: var(--fs-meta); }
   .readers-strip .split { flex: 1; max-width: 120px; margin-left: auto; }
-  .hud-cards { position: absolute; left: 12px; right: 12px; bottom: 24px; max-height: 32vh; display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; align-items: flex-start; scrollbar-width: none; }
-  /* Swipeable panels (#59): each a little narrower than the row, so the next
-     one peeks in at the edge, with page dots below saying there are more. */
-  .hud-cards > .hud { position: relative; flex: 0 0 calc(100vw - 68px); scroll-snap-align: start; max-height: 32vh; overflow-y: auto; }
-  .hud-cards > .hud:last-child { scroll-snap-align: end; }
+  .hud-cards { position: absolute; left: 12px; right: 12px; bottom: 12px; max-height: 32vh; display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; align-items: flex-start; scrollbar-width: none; }
+  .hud-cards > .hud { position: relative; flex: 0 0 calc(100vw - 40px); scroll-snap-align: center; max-height: 32vh; overflow-y: auto; }
+  /* Several swipeable panels (#59): each a little narrower than the row, so the
+     next one peeks in at the edge, with page dots below saying there are more.
+     A single panel (Live off: the legend) keeps the full width (#79 review). */
+  .hud-cards.multi { bottom: 24px; }
+  .hud-cards.multi > .hud { flex-basis: calc(100vw - 68px); scroll-snap-align: start; }
+  .hud-cards.multi > .hud:last-child { scroll-snap-align: end; }
   .card-dots { position: absolute; left: 12px; right: 12px; bottom: 8px; display: flex; justify-content: center; gap: 6px; pointer-events: none; }
   .card-dots i { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5); transition: background 0.2s, width 0.2s; }
   .card-dots i.on { width: 16px; border-radius: 3px; background: var(--orange); }
@@ -246,8 +249,10 @@ section h3 { font-family: var(--mono); font-size: var(--fs-label); font-weight: 
 /* Phone on its side: every panel in the left half, the globe alone in the right half. */
 @media (orientation: landscape) and (max-height: 520px) {
   .topbar, .readers-strip { right: auto; width: calc(50% - 12px); }
-  .hud-cards { right: auto; width: calc(50% - 16px); top: calc(var(--strip-bottom, 100px) + 8px); bottom: 20px; max-height: none; }
-  .hud-cards > .hud { flex-basis: calc(50vw - 56px); max-height: 100%; }
+  .hud-cards { right: auto; width: calc(50% - 16px); top: calc(var(--strip-bottom, 100px) + 8px); bottom: 8px; max-height: none; }
+  .hud-cards > .hud { flex-basis: calc(50vw - 28px); max-height: 100%; }
+  .hud-cards.multi { bottom: 20px; }
+  .hud-cards.multi > .hud { flex-basis: calc(50vw - 56px); }
   .card-dots { right: auto; width: calc(50% - 16px); bottom: 6px; }
   .details { top: calc(var(--strip-bottom, 100px) + 8px); bottom: 8px; left: 8px; right: auto; width: calc(50% - 12px); height: auto; }
 }
