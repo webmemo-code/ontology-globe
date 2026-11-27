@@ -1,3 +1,4 @@
+import { liveStatus } from './hud/liveStatus';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { GraphScene, type CameraKeyframe, type View } from './three/GraphScene';
 import { Lens } from './Lens';
@@ -614,7 +615,7 @@ function Viewer({ graph }: { graph: Graph }) {
         onMode={setMode}
         live={live}
         onLive={() => setLive(!live)}
-        liveText={liveLabel(liveState)}
+        liveStatus={liveStatus(liveState)}
         search={searchEl}
         onTour={() => setTourStep(0)}
         onReset={() => {
@@ -758,14 +759,6 @@ function Viewer({ graph }: { graph: Graph }) {
 }
 
 /** Which blogs answered; the counts live in the panels. */
-function liveLabel(data: LiveBySite | null): string {
-  if (!data) return 'connecting…';
-  const sites = Object.keys(data);
-  if (!sites.length) return 'offline';
-  const readers = Object.values(data).some((d) => d?.readers_status === 'ok');
-  return `last 30 min · ${sites.length === 2 ? 'both blogs' : sites[0]}${readers ? '' : ' · AI agents only'}`;
-}
-
 function chipFor(n: GraphNode, label: string, onPick: (key: string) => void) {
   return (
     <button key={n.key} className="chip" style={{ borderColor: CLASS_COLORS[n.class] }} onClick={() => onPick(n.key)}>

@@ -57,9 +57,12 @@ and the photos of its articles. An article draws rays to its entities.
 
 ## Live
 
-**● Live** (globe view, or `?live` in the URL). The panels around the globe
-show the active reads per blog, the AI agents by purpose and what each output
-served; the globe is framed between them.
+**Live** (the pill at the right of the top bar, globe view, or `?live` in the
+URL). Off, it reads ▶ OFFLINE; on, a green LIVE · 30 MIN, or amber with what
+is missing while the feed is degraded (connecting, no feed, one blog only, AI
+agents only). The panels around the globe show the active reads per blog, the
+AI agents by purpose and what each output served; the globe is framed between
+them.
 
 - **Readers** of the last 30 minutes glow at their city, with a flowing line to
   the article they read (GA4 Realtime): solid orange for Travelmemo, dashed
@@ -72,8 +75,9 @@ served; the globe is framed between them.
   operator's headquarters instead. Agents on article pages are not seen,
   because the page cache serves those without PHP. Each satellite and each row
   in the AI agents panel carries the company's site icon
-  (`node scripts/fetch-bot-icons.mjs` refreshes them), and a row's blue EN or
-  grey DE chip says which blog was fetched.
+  (`node scripts/fetch-bot-icons.mjs` refreshes them), its purpose and route
+  as one line after the name, and a blue EN or grey DE chip saying which blog
+  was fetched.
 - **Follow** (in the Now reading header, on by default): the feed is checked
   every 30 seconds, and the camera flies to each newly seen reader or agent so
   their location and destination are both in view (just the destination when
