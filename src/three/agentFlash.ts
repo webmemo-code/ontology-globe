@@ -48,7 +48,17 @@ export function borderEnvelope(s: number): number {
   return 0.5 * (1 + Math.cos(Math.PI * (s / BORDER_FADE_S)));
 }
 
-export type FlashKind ='country' | 'topic';
+/**
+ * A follow flight to an agent's target ended (#85): only one that arrived
+ * restarts the target's flash, so the border fades in front of the camera
+ * instead of during the 2.4 s flight. A cancelled or refused flight leaves the
+ * queue alone: no late flash. Returns whether it restarted.
+ */
+export function flashOnArrival(queue: FlashQueue, key: string | null, result: 'done' | 'cancelled' | 'refused', now: number): boolean {
+  return result === 'done' && key !== null && queue.restart(key, now);
+}
+
+export type FlashKind = 'country' | 'topic';
 
 export interface FlashRow {
   id: string;
@@ -101,6 +111,18 @@ export class FlashQueue {
     }
     this.previousRows = new Set(rows.map((row) => row.id));
     if (!rows.length) this.lastStart = -Infinity;
+  }
+
+  /**
+   * Start `key`'s flash at `now` whatever the queue says (#85): the camera has
+   * just arrived to show it. False when no listed fetch points at `key`.
+   */
+  restart(key: string, now: number): boolean {
+    const f = this.flashes.get(key);
+    if (!f) return false;
+    f.start = now;
+    f.pending = false;
+    return true;
   }
 
   /** Start queued flashes as slots free up; call once per frame with the clock in seconds. */

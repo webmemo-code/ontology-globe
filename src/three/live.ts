@@ -38,6 +38,8 @@ export const READER_COLOR = '#FF9000';
 const READER_DIM = new THREE.Color(READER_COLOR).multiplyScalar(0.78);
 /** Satellite icons: dimmed below the bloom threshold, hue kept. */
 const ICON_DIM = new THREE.Color(0.58, 0.58, 0.58);
+/** Seconds a followed agent's stand-in takes to fade in or out (#82). */
+const PROXY_FADE_S = 1;
 /** Both blogs read orange; the line style tells them apart (READER_LINE_STYLE). */
 export const READER_ARC_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#FF9000' };
 /** A read article's ring, by blog. */
@@ -187,6 +189,25 @@ export class LiveLayer {
   private botPaths = new Map<string, { sat: Satellite; at: THREE.Vector3; interior: boolean; ago: number; entity?: string }>();
 
   private labels: Labels;
+
+  /**
+   * A stand-in for a followed agent whose real marker, over its operator's
+   * headquarters, is below its target's horizon (#82): the same marker at a
+   * spot the camera can frame over its shoulder, beaming to the target, with a
+   * faint dashed link back to the real one. It fades out (PROXY_FADE_S) once
+   * the user takes the camera or the row leaves; polls do not clear it.
+   */
+  private proxy: {
+    row: string;
+    at: THREE.Vector3;
+    alpha: number;
+    show: boolean;
+    mesh: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+    icon: THREE.Sprite | null;
+    beam: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>;
+    link: THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>;
+  } | null = null;
+  private lastTick: number | null = null;
 
   constructor(labels: Labels) {
     this.labels = labels;
@@ -413,8 +434,88 @@ export class LiveLayer {
     }
   }
 
+  /** Show a stand-in for `row`'s agent at `at` (see `proxy`); null fades the current one out. */
+  setProxy(row: string | null, at?: THREE.Vector3) {
+    if (!row || !at) {
+      if (this.proxy) this.proxy.show = false;
+      return;
+    }
+    const b = this.botPaths.get(row);
+    if (!b) return;
+    this.dropProxy();
+    const color = TIER_COLORS[tierOf(b.sat.bot)];
+    const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(2.4), new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0 }));
+    const url = botIcon(b.sat.bot);
+    const icon = url ? new THREE.Sprite(new THREE.SpriteMaterial({ map: this.iconTexture(url), color: ICON_DIM, transparent: true, opacity: 0, depthWrite: false, fog: false })) : null;
+    icon?.scale.setScalar(2.2);
+    const { mat: beamMat, shift } = flowingDash({ color, dashSize: 0.8, gapSize: 0.8, transparent: true, opacity: 0, depthWrite: false });
+    const beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints([at, b.at]), beamMat);
+    beam.userData.shift = shift;
+    const link = new THREE.Line(new THREE.BufferGeometry().setFromPoints([b.sat.anchor, at]), new THREE.LineDashedMaterial({ color, dashSize: 0.4, gapSize: 1.6, transparent: true, opacity: 0, depthWrite: false }));
+    this.group.add(mesh, beam, link);
+    if (icon) this.group.add(icon);
+    this.proxy = { row, at: at.clone(), alpha: 0, show: true, mesh, icon, beam, link };
+  }
+
+  /** Whether a stand-in is shown or still fading in. */
+  get proxyShown(): boolean {
+    return !!this.proxy?.show;
+  }
+
+  private dropProxy() {
+    const p = this.proxy;
+    if (!p) return;
+    this.group.remove(p.mesh, p.beam, p.link);
+    if (p.icon) {
+      this.group.remove(p.icon);
+      p.icon.material.dispose();
+    }
+    p.mesh.geometry.dispose();
+    p.mesh.material.dispose();
+    p.beam.geometry.dispose();
+    p.beam.material.dispose();
+    p.link.geometry.dispose();
+    p.link.material.dispose();
+    this.proxy = null;
+  }
+
+  private tickProxy(t: number) {
+    const dt = this.lastTick === null ? 0 : Math.min(0.1, Math.max(0, t - this.lastTick));
+    this.lastTick = t;
+    const p = this.proxy;
+    if (!p) return;
+    const b = this.botPaths.get(p.row);
+    if (!b) p.show = false;
+    p.alpha = Math.min(1, Math.max(0, p.alpha + (p.show ? 1 : -1) * (dt / PROXY_FADE_S)));
+    if (!p.show && p.alpha === 0) return this.dropProxy();
+    const a = p.alpha * p.alpha * (3 - 2 * p.alpha); // smoothstep
+    p.mesh.position.copy(p.at).multiplyScalar(1 + 0.012 * Math.sin(t * 1.3));
+    p.mesh.rotation.set(t * 0.7, t * 1.1, 0);
+    p.mesh.material.opacity = a;
+    if (p.icon) {
+      p.icon.position.copy(p.mesh.position);
+      p.icon.material.opacity = a;
+    }
+    if (b) {
+      const beam = p.beam.geometry.getAttribute('position') as THREE.BufferAttribute;
+      beam.setXYZ(0, p.mesh.position.x, p.mesh.position.y, p.mesh.position.z);
+      beam.setXYZ(1, b.at.x, b.at.y, b.at.z);
+      beam.needsUpdate = true;
+      const link = p.link.geometry.getAttribute('position') as THREE.BufferAttribute;
+      link.setXYZ(0, b.sat.mesh.position.x, b.sat.mesh.position.y, b.sat.mesh.position.z);
+      link.setXYZ(1, p.mesh.position.x, p.mesh.position.y, p.mesh.position.z);
+      link.needsUpdate = true;
+    }
+    p.beam.computeLineDistances();
+    p.link.computeLineDistances();
+    (p.beam.userData.shift as { value: number }).value = -t * 4;
+    p.beam.material.opacity = 0.85 * a;
+    p.link.material.opacity = 0.3 * a;
+  }
+
   /** Hover, beams and pulses; call every frame. `eye` is the camera: pins show only outside the dome, on its near side. */
   tick(t: number, eye: THREE.Vector3) {
+    this.tickProxy(t);
     const outside = eye.length() > DOME_R;
     this.pinGroup.visible = outside;
     if (outside)

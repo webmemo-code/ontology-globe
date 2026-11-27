@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AGENT_ROWS, KNOWN_BOTS, botIcon, brandColor, fetchResolver, listedFetches, type LiveBot, type LiveBySite } from './live';
+import { AGENT_ROWS, KNOWN_BOTS, agentTargets, botIcon, brandColor, fetchResolver, listedFetches, type LiveBot, type LiveBySite } from './live';
 
 describe('listedFetches (#83)', () => {
   const bot = (entity: string, seconds_ago: number, route = 'ontology'): LiveBot =>
@@ -51,6 +51,26 @@ describe('listedFetches (#83)', () => {
 
   it('is empty without data', () => {
     expect(listedFetches(null, 'both', all)).toEqual([]);
+  });
+});
+
+describe('agentTargets (#82)', () => {
+  const bot = (entity: string | undefined, seconds_ago: number, kind: 'entity' | 'post' = 'entity'): LiveBot =>
+    ({ bot: 'meta-externalagent', route: 'ontology', kind, entity, post: kind === 'post' ? 7 : undefined, seconds_ago, country: 'US' }) as LiveBot;
+  const snap = (bots: LiveBot[]) => ({ readers: [], bots }) as unknown as NonNullable<LiveBySite[keyof LiveBySite]>;
+  const data: LiveBySite = {
+    travelmemo: snap([bot('organizations/small-luxury-hotels', 5), bot(undefined, 6, 'post')]),
+    reisememo: snap([bot('places/schwyz', 8)]),
+  };
+
+  const listed = (mode: string) => listedFetches(data, mode, () => true);
+
+  it('keeps the entities of listed rows, not posts', () => {
+    expect([...agentTargets(listed('both'))].sort()).toEqual(['organizations/small-luxury-hotels', 'places/schwyz']);
+  });
+
+  it('keeps only the blog in view', () => {
+    expect([...agentTargets(listed('reisememo'))]).toEqual(['places/schwyz']);
   });
 });
 

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { beamToSkin, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { beamToSkin, frameAgent, frameInward, framePair, outranks, pathAt, pathPolicy, proxyAnchor, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -158,6 +158,30 @@ describe('agent fetching an entity, framed from outside', () => {
   ];
   const beam = (sat: THREE.Vector3, entity: THREE.Vector3) => Array.from({ length: 17 }, (_, i) => sat.clone().lerp(entity, i / 16));
 
+  it('puts the satellite in front of the destination when it is above the horizon (#82)', () => {
+    // Satellite high over the destination: the over-the-shoulder shot applies.
+    const entity = new THREE.Vector3(0.12, 0.72, -0.68).normalize().multiplyScalar(40);
+    const sat = entity.clone().normalize().applyAxisAngle(new THREE.Vector3(1, 0, 0), 0.5).multiplyScalar(DOME_R * 1.5);
+    const { key: k, full } = frameAgent(sat, entity, tans(ASPECTS.desktop));
+    expect(full).toBe(true);
+    const eye = new THREE.Vector3(k.position.x, k.position.y, k.position.z);
+    expect(eye.distanceTo(sat)).toBeLessThan(eye.distanceTo(entity.clone().setLength(DOME_R)));
+  });
+
+  it('places a stand-in only when the real satellite is below the horizon, and it gets the full shot (#82)', () => {
+    const swiss = new THREE.Vector3(0, 0, -40);
+    // Over Menlo Park, as measured in the app: below Switzerland's horizon.
+    const far = new THREE.Vector3(64, 57, -36);
+    const proxy = proxyAnchor(far, swiss)!;
+    expect(proxy).not.toBeNull();
+    expect(proxy.length()).toBeCloseTo(far.length(), 6);
+    for (const aspect of Object.values(ASPECTS)) expect(frameAgent(proxy, swiss, tans(aspect)).full).toBe(true);
+    // On the headquarters' side of the destination.
+    expect(proxy.clone().normalize().dot(far.clone().normalize())).toBeGreaterThan(swiss.clone().normalize().dot(far.clone().normalize()));
+    // Already over the destination: no stand-in.
+    expect(proxyAnchor(new THREE.Vector3(0, 10, -90), swiss)).toBeNull();
+  });
+
   it('clips the beam where it enters the skin', () => {
     const pts = beamToSkin(beam(cases[0].sat, cases[0].entity));
     expect(pts[0].equals(cases[0].sat)).toBe(true);
@@ -167,6 +191,18 @@ describe('agent fetching an entity, framed from outside', () => {
 
   for (const [name, aspect] of Object.entries(ASPECTS))
     cases.forEach(({ sat, entity }, i) => {
+      it(`frames the agent over its shoulder, or at least the destination, case ${i + 1} on ${name} (#82)`, () => {
+        const { key: k, full } = frameAgent(sat, entity, tans(aspect));
+        const eye = new THREE.Vector3(k.position.x, k.position.y, k.position.z);
+        expect(eye.length()).toBeGreaterThan(DOME_R);
+        const at = shoot(k, aspect);
+        const dest = entity.clone().setLength(DOME_R);
+        expect(at(dest).inFrame).toBe(true);
+        if (full) {
+          expect(at(sat).inFrame).toBe(true);
+          expect(at(dest).visible).toBe(true);
+        }
+      });
       it(`keeps the eye outside with the satellite and the entry point in frame, case ${i + 1} on ${name}`, () => {
         const pts = beamToSkin(beam(sat, entity));
         const { key: k, full } = framePair(pts, tans(aspect));

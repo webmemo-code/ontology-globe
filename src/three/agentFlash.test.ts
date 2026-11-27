@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BORDER_FADE_S, FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, borderEnvelope, envelope, type FlashRow } from './agentFlash';
+import { BORDER_FADE_S, FADE_S, FLICKER_S, FLOOR, FlashQueue, MAX_ACTIVE, STAGGER_S, borderEnvelope, envelope, flashOnArrival, type FlashRow } from './agentFlash';
 
 describe('envelope (#80)', () => {
   it('flickers, then fades to the floor and stays there', () => {
@@ -29,6 +29,40 @@ describe('borderEnvelope (#83)', () => {
     expect(borderEnvelope(60)).toBe(0);
     const v = Array.from({ length: 20 }, (_, i) => borderEnvelope((i / 20) * BORDER_FADE_S));
     v.slice(1).forEach((x, i) => expect(x).toBeLessThan(v[i]));
+  });
+});
+
+describe('flashOnArrival (#85)', () => {
+  const FLIGHT_S = 2.4; // the follow flight
+  const country = (): FlashQueue => {
+    const q = new FlashQueue();
+    q.sync([{ id: 'b:reisememo:meta:ontology:places/schwyz', key: 'places/switzerland', kind: 'country', color: '#0081FB', site: 'reisememo', age: 0 }]);
+    q.update(0); // the poll's flash starts while the camera is still flying
+    return q;
+  };
+
+  it('restarts the border when the flight arrives, so it is visible after landing', () => {
+    const q = country();
+    expect(borderEnvelope(FLIGHT_S - q.flashes.get('places/switzerland')!.start!)).toBe(0); // the bug: gone on landing
+    expect(flashOnArrival(q, 'places/switzerland', 'done', FLIGHT_S)).toBe(true);
+    const start = q.flashes.get('places/switzerland')!.start!;
+    expect(borderEnvelope(FLIGHT_S - start)).toBe(1);
+    expect(borderEnvelope(FLIGHT_S + 1 - start)).toBeGreaterThan(0.4);
+  });
+
+  it('leaves the queue alone when the flight is cancelled or refused: no late flash', () => {
+    for (const result of ['cancelled', 'refused'] as const) {
+      const q = country();
+      expect(flashOnArrival(q, 'places/switzerland', result, FLIGHT_S)).toBe(false);
+      expect(q.flashes.get('places/switzerland')!.start).toBe(0);
+    }
+  });
+
+  it('does nothing for a target no listed fetch points at', () => {
+    const q = country();
+    expect(flashOnArrival(q, 'places/italy', 'done', FLIGHT_S)).toBe(false);
+    expect(flashOnArrival(q, null, 'done', FLIGHT_S)).toBe(false);
+    expect(q.flashes.has('places/italy')).toBe(false);
   });
 });
 

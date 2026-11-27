@@ -11,9 +11,9 @@ import { withDetailFade } from './detailFade';
 import { createBloomComposer, type BloomComposerResult } from './bloomComposer';
 import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
-import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
-import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
-import { brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
+import { FlashQueue, borderEnvelope, envelope, flashOnArrival, type FlashKind, type FlashRow } from './agentFlash';
+import { beamToSkin, frameAgent, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, proxyAnchor, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
+import { agentTargets, brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
@@ -188,6 +188,8 @@ export class GraphScene {
   private labels = new Labels();
   private live = new LiveLayer(this.labels);
   private liveData: LiveBySite | null = null;
+  /** Entities the listed agent rows fetch: kept at full detail from outside (#82). */
+  private agentKeys = new Set<string>();
   /** New agent fetches flash their target (#80): queue and country border lines. */
   private flashes = new FlashQueue();
   private flashLines = new Map<string, {
@@ -281,6 +283,8 @@ export class GraphScene {
   /** The guided tour owns the camera: no system spin, no live follow. */
   private touring = false;
   private touchedAt = 0;
+  /** The follow shot that shows an agent's stand-in: its eye distance and when it was set (#82). */
+  private proxyShot: { eyeR: number; at: number } | null = null;
   private lastTick = 0;
   private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   private graph: Graph;
@@ -554,14 +558,27 @@ export class GraphScene {
     // Exactly the rows the AI agents panel lists, by the same selector: no flash without a row (#83).
     for (const { id, site, bot: b } of listedFetches(this.liveData, this.mode, fetchResolver(this.postsByKey, this.nodes))) {
       if (b.kind !== 'entity' || !b.entity) continue;
-      const node = this.nodes.get(b.entity);
-      const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, b.entity, 'Country') : null;
-      const target: [string, FlashKind] | null = node?.class === 'topics' ? [b.entity, 'topic'] : country ? [country, 'country'] : null;
+      const target = this.flashTarget(b.entity);
       // A border takes the operator's brand colour; a topic keeps the tier colour of the agent markers.
       const color = (target?.[1] === 'country' && brandColor(b.bot)) || TIER_COLORS[tierOf(b.bot)];
       if (target) rows.push({ id, key: target[0], kind: target[1], color, site, age: b.seconds_ago });
     }
     this.flashes.sync(rows);
+  }
+
+  /** What an agent fetch of `entity` flashes: a topic itself, a place its country's border; null for anything else. */
+  private flashTarget(entity: string): [string, FlashKind] | null {
+    const node = this.nodes.get(entity);
+    if (node?.class === 'topics') return [entity, 'topic'];
+    const country = node?.class === 'places' ? ancestorOfType(this.tree, this.nodes, entity, 'Country') : null;
+    return country ? [country, 'country'] : null;
+  }
+
+  /** A flight to a live row's pair ended: an agent's target flashes now, in front of the camera (#85). */
+  private flashOnLanding(row: string, result: FlightResult) {
+    const entity = this.live.pathOf(row)?.entity;
+    const target = entity ? this.flashTarget(entity) : null;
+    flashOnArrival(this.flashes, target?.[0] ?? null, result, this.clock.getElapsedTime());
   }
 
   /** Per frame: start queued flashes and draw them, from outside the globe in the globe view only. */
@@ -685,6 +702,7 @@ export class GraphScene {
 
   private refreshLive() {
     this.queueFlashes();
+    this.agentKeys = agentTargets(listedFetches(this.liveData, this.mode, fetchResolver(this.postsByKey, this.nodes)));
     const data =this.liveData && this.mode !== 'both' ? { [this.mode]: this.liveData[this.mode] } : this.liveData;
     this.live.set(data, {
       atlas: this.atlas,
@@ -1159,7 +1177,7 @@ export class GraphScene {
     };
     for (const v of this.views.values()) {
       for (const b of [v]) {
-        const focus = this.selected === v.key || this.filter?.has(v.key);
+        const focus = this.selected === v.key || this.filter?.has(v.key) || (this.live.group.visible && this.agentKeys.has(v.key));
         const reach = v.node.class === 'places' && v.node.depth > 1 ? 55 : 90;
         const local = 1 - THREE.MathUtils.smoothstep(this.camera.position.distanceTo(b.mesh.position), reach * 0.45, reach);
         b.detail.value = this.view !== 'graph' || focus ? 1 : Math.min(overview, local);
@@ -1257,7 +1275,8 @@ export class GraphScene {
     // Nothing selected and already home (e.g. on load): no flight, so live follow is not blocked.
     if (!key) return this.atHome && !this.flight ? undefined : this.flyHome(1600, owner);
     const path = pair && this.view === 'graph' && this.live.group.visible ? this.live.pathOf(pair) : null;
-    if (path) return void this.flyTo(this.pairShot(path), 1900, owner);
+    if (path) return void this.flyTo(this.pairShot(path, pair), 1900, owner).then((r) => this.flashOnLanding(pair!, r));
+    this.live.setProxy(null);
     const shot = this.shotFor(key);
     if (shot) void this.flyTo(shot, this.postsByKey.has(key) ? 1900 : this.view === 'system' ? 1600 : 1800, owner);
   }
@@ -1356,7 +1375,8 @@ export class GraphScene {
     const path = this.live.pathOf(row);
     if (!path) return 'none';
     const reduced = this.reduced.matches;
-    void this.flyTo(this.pairShot(path), reduced ? 1 : 2400, 'follow').then((r) => {
+    void this.flyTo(this.pairShot(path, row), reduced ? 1 : 2400, 'follow').then((r) => {
+      this.flashOnLanding(row, r);
       if (r === 'done' && !reduced) this.drift = { kind: 'pair' };
     });
     return 'started';
@@ -1366,6 +1386,7 @@ export class GraphScene {
   stopFollow() {
     if (this.flight?.owner === 'follow' || this.flight?.owner === 'drift') this.cancelFlight();
     if (this.drift?.kind === 'pair') this.drift = null;
+    this.live.setProxy(null);
   }
 
   /**
@@ -1373,9 +1394,40 @@ export class GraphScene {
    * frame their whole curve; an agent fetching an entity inside the dome frames
    * its beam down to where it enters the skin (beamToSkin).
    */
-  private pairShot(path: { points: THREE.Vector3[]; interior: boolean }): CameraKeyframe {
-    const eye = this.camera.position;
-    return framePair(path.interior ? beamToSkin(path.points) : path.points, { ...this.frameTans(), eye }).key;
+  private pairShot(path: { points: THREE.Vector3[]; interior: boolean }, row?: string): CameraKeyframe {
+    this.live.setProxy(null);
+    this.proxyShot = null;
+    const o = { ...this.frameTans(), eye: this.camera.position };
+    if (!path.interior) return framePair(path.points, o).key;
+    // An agent: over its shoulder onto the skin above its target (#82). Topics
+    // on the wheel near the centre have no place on the skin: frame the beam.
+    const sat = path.points[0];
+    const entity = path.points[path.points.length - 1];
+    if (entity.length() <= DOME_R * 0.5) return framePair(beamToSkin(path.points), o).key;
+    // Real marker below the target's horizon: frame a stand-in instead, shown for this shot only.
+    const proxy = row ? proxyAnchor(sat, entity) : null;
+    const shot = frameAgent(proxy ?? sat, entity, o);
+    if (proxy && shot.full) {
+      this.live.setProxy(row!, proxy);
+      const p = shot.key.position;
+      this.proxyShot = { eyeR: Math.hypot(p.x, p.y, p.z), at: performance.now() };
+    }
+    return proxy && !shot.full ? frameAgent(sat, entity, o).key : shot.key;
+  }
+
+  /**
+   * The stand-in fades once the viewer takes the camera or zooms well out of
+   * the shot (#82): the real marker over the headquarters is what remains.
+   */
+  private checkProxy() {
+    if (!this.proxyShot || !this.live.proxyShown) return;
+    const touched = this.touchedAt > this.proxyShot.at;
+    // Zoomed out: judged only once the flight has landed, since it starts from wherever the camera was.
+    const zoomedOut = !this.flight && this.camera.position.length() > this.proxyShot.eyeR * 1.3;
+    if (touched || zoomedOut || this.view !== 'graph') {
+      this.live.setProxy(null);
+      this.proxyShot = null;
+    }
   }
 
   /** Half-angle tangents of the HUD's free rectangle, for framing (one focal length for both axes). */
@@ -1632,6 +1684,7 @@ export class GraphScene {
       const key = this.hovered ?? this.selected;
       this.system.animate(t, key, this.reduced.matches);
     }
+    this.checkProxy();
     if (this.live.group.visible) this.live.tick(t, this.camera.position);
     const fade = this.articles.group.visible ? this.articles.update(this.camera) : null;
     this.spotlight(t);

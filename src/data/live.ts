@@ -129,6 +129,17 @@ const BRAND_COLORS: Record<string, string> = {
   diffbot: '#3BB273', // Diffbot green
 };
 
+/**
+ * Entities the listed agent rows fetch (#82; pass listedFetches): the globe
+ * shows these at full detail from outside, like a selection, so a beam never
+ * ends at a faded-out node.
+ */
+export function agentTargets(rows: AgentRow[]): Set<string> {
+  const keys = new Set<string>();
+  for (const { bot } of rows) if (bot.kind === 'entity' && bot.entity) keys.add(bot.entity);
+  return keys;
+}
+
 /** The crawler's operator brand colour, or null when there is none. */
 export function brandColor(bot: string): string | null {
   const brand = BOT_OPERATOR[bot] ?? BOT_BRAND[bot];
