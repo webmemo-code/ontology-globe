@@ -13,7 +13,7 @@ import { Labels } from './label';
 import { LiveLayer, TIER_COLORS, hash } from './live';
 import { FlashQueue, borderEnvelope, envelope, type FlashKind, type FlashRow } from './agentFlash';
 import { beamToSkin, frameInward, framePair, framePlace, framePost, frameInterior, frameTopic, kf, outranks, pathAt, pathPolicy, type CameraKeyframe, type CameraOwner, type FlightResult, type PathPolicy } from './camera';
-import { brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
+import { agentTargets, brandColor, fetchResolver, listedFetches, tierOf, type LiveBySite } from '../data/live';
 import { CUBE_Y, GHOST_SHELL, MINI, buildSystem, miniGlobePositions } from './system';
 import { buildArticleLayer, type ArticleLayer } from './articles';
 import type { AtlasIndex } from './dome';
@@ -188,6 +188,8 @@ export class GraphScene {
   private labels = new Labels();
   private live = new LiveLayer(this.labels);
   private liveData: LiveBySite | null = null;
+  /** Entities the listed agent rows fetch: kept at full detail from outside (#82). */
+  private agentKeys = new Set<string>();
   /** New agent fetches flash their target (#80): queue and country border lines. */
   private flashes = new FlashQueue();
   private flashLines = new Map<string, {
@@ -685,6 +687,7 @@ export class GraphScene {
 
   private refreshLive() {
     this.queueFlashes();
+    this.agentKeys = agentTargets(listedFetches(this.liveData, this.mode, fetchResolver(this.postsByKey, this.nodes)));
     const data =this.liveData && this.mode !== 'both' ? { [this.mode]: this.liveData[this.mode] } : this.liveData;
     this.live.set(data, {
       atlas: this.atlas,
@@ -1159,7 +1162,7 @@ export class GraphScene {
     };
     for (const v of this.views.values()) {
       for (const b of [v]) {
-        const focus = this.selected === v.key || this.filter?.has(v.key);
+        const focus = this.selected === v.key || this.filter?.has(v.key) || (this.live.group.visible && this.agentKeys.has(v.key));
         const reach = v.node.class === 'places' && v.node.depth > 1 ? 55 : 90;
         const local = 1 - THREE.MathUtils.smoothstep(this.camera.position.distanceTo(b.mesh.position), reach * 0.45, reach);
         b.detail.value = this.view !== 'graph' || focus ? 1 : Math.min(overview, local);
