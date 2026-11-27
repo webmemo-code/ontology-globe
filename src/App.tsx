@@ -10,6 +10,7 @@ import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, typ
 import { AgentsPanel } from './hud/AgentsPanel';
 import { ReadersPanel, ReadersStrip, ReadingPanel } from './hud/ReadersPanel';
 import { ServedStrip } from './hud/ServedStrip';
+import { CardDots } from './hud/CardDots';
 import { TopBar } from './hud/TopBar';
 import { demoHistory, liveStats, readerPlace, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
 import { useMedia } from './hud/useMedia';
@@ -408,6 +409,8 @@ function Viewer({ graph }: { graph: Graph }) {
   const showLive = view === 'graph' && live;
   const sheetOpen = noTour && !!(node || post || info);
   const cardsShown = mobile && noTour && !sheetOpen;
+  // Panels in the phone's swipe row: the peek and page dots only when there is more than one.
+  const cardCount = (showLive ? 3 : 0) + 1; // reading, agents, served when Live is on; the legend always
   const servedShown = showLive && noTour && !mobile;
   const stats = useMemo(() => liveStats(liveState ?? {}, mode), [liveState, mode]);
   const series = useMemo(() => history.map((s) => s[mode]), [history, mode]);
@@ -649,13 +652,14 @@ function Viewer({ graph }: { graph: Graph }) {
       {mobile && showLive && <ReadersStrip ref={stripRef} total={stats.total} split={split} />}
       {mobile && detailsEl}
       {cardsShown && (
-        <div ref={cardsRef} className="hud-cards">
+        <div ref={cardsRef} className={`hud-cards${cardCount > 1 ? ' multi' : ''}`}>
           {showLive && readingPanel}
           {showLive && agentsPanel}
           {showLive && <ServedStrip served={stats.served} list />}
           {legendEl}
         </div>
       )}
+      {cardsShown && <CardDots cards={cardsRef} count={cardCount} />}
 
       {showCredits && (
         <aside className="hud credits">
