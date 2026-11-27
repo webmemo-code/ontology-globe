@@ -75,8 +75,8 @@ export function ReadingPanel({
   onFollow: () => void;
 }) {
   const toggle = (
-    <button className={`follow-toggle${follow ? ' on' : ''}`} onClick={onFollow} aria-pressed={follow} title="Fly to each new visitor, reader or AI agent">
-      Follow
+    <button className={`follow-toggle${follow ? ' on' : ''}`} onClick={onFollow} aria-pressed={follow} aria-label="Follow" title="Fly to each new visitor, reader or AI agent">
+      {follow ? 'Camera follows' : 'Follow'}
     </button>
   );
   return (
