@@ -107,7 +107,6 @@ function flicker(t: number, seed: number): number {
   return stepRand(step - 1, seed) > 0.45 ? (1 - (x - step)) ** 2 : 0;
 }
 
-/** The colour depthFade scales from; written here, so the spotlight and the depth cue share one source. */
 /** A solid dot with a short soft rim, for a topic's agent flash (#80). */
 function flashDotTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas');
@@ -123,6 +122,7 @@ function flashDotTexture(): THREE.CanvasTexture {
   return new THREE.CanvasTexture(c);
 }
 
+/** The colour depthFade scales from; written here, so the spotlight and the depth cue share one source. */
 function setBase(m: THREE.Material & { color: THREE.Color }, c: THREE.Color) {
   ((m.userData.base ??= new THREE.Color()) as THREE.Color).copy(c);
 }
@@ -187,7 +187,14 @@ export class GraphScene {
   private liveData: LiveBySite | null = null;
   /** New agent fetches flash their target (#80): queue and country border lines. */
   private flashes = new FlashQueue();
-  private flashLines = new Map<string, { line: LineSegments2; segs: number[]; mat: LineMaterial }>();
+  private flashLines = new Map<string, {
+    line: LineSegments2;
+    segs: number[];
+    mat: LineMaterial;
+    positions: Float32Array;
+    buffer: THREE.InterleavedBuffer;
+    lastEye: THREE.Vector3;
+  }>();
   /** Topics a flash showed last frame: repainted once their flash is gone. */
   private flashTopics = new Set<string>();
   private flashDots = new Map<string, THREE.Sprite>();
@@ -572,24 +579,48 @@ export class GraphScene {
         if (!fl && feat) {
           const segs: number[] = [];
           borderSegments(feat.geometry, segs);
+          if (!segs.length) continue;
           const { clientWidth: w, clientHeight: h } = this.container;
           const mat = new LineMaterial({ color, linewidth: 2.5, transparent: true, depthWrite: false });
           mat.resolution.set(w, h);
-          fl = { line: new LineSegments2(new LineSegmentsGeometry(), mat), segs, mat };
+          const positions = new Float32Array(segs);
+          // Allocate once, with bounds that cover the full border. Only the
+          // instances in the visible prefix are drawn.
+          const geometry = new LineSegmentsGeometry().setPositions(positions);
+          const buffer = (geometry.getAttribute('instanceStart') as THREE.InterleavedBufferAttribute).data;
+          buffer.setUsage(THREE.DynamicDrawUsage);
+          fl = { line: new LineSegments2(geometry, mat), segs, mat, positions, buffer, lastEye: new THREE.Vector3() };
           this.flashLines.set(f.key, fl);
           this.flashGroup.add(fl.line);
         }
         if (fl) {
-          // Near side only: a border segment shows while both ends face the camera.
+          // Camera motion changes which segments face the eye. Reuse the
+          // instance buffer and upload only when the visible prefix changes.
           const eye = this.camera.position;
-          const r2 = GHOST_R * GHOST_R;
-          const facing = (i: number) => fl!.segs[i] * eye.x + fl!.segs[i + 1] * eye.y + fl!.segs[i + 2] * eye.z > r2;
-          const near: number[] = [];
-          for (let i = 0; i < fl.segs.length; i += 6) if (facing(i) && facing(i + 3)) near.push(...fl.segs.slice(i, i + 6));
-          if (near.length) fl.line.geometry.setPositions(near);
+          if (!fl.lastEye.equals(eye)) {
+            fl.lastEye.copy(eye);
+            const { segs, positions, line, buffer } = fl;
+            const r2 = GHOST_R * GHOST_R;
+            const facing = (i: number) => segs[i] * eye.x + segs[i + 1] * eye.y + segs[i + 2] * eye.z > r2;
+            let count = 0;
+            let changed = false;
+            for (let i = 0; i < segs.length; i += 6) {
+              if (!facing(i) || !facing(i + 3)) continue;
+              for (let j = 0; j < 6; j++) {
+                const value = Math.fround(segs[i + j]);
+                if (positions[count] !== value) {
+                  positions[count] = value;
+                  changed = true;
+                }
+                count++;
+              }
+            }
+            line.geometry.instanceCount = count / 6;
+            if (changed) buffer.needsUpdate = true;
+          }
           fl.mat.color.set(color);
           fl.mat.opacity = e;
-          fl.line.visible = e > 0.003 && near.length > 0;
+          fl.line.visible = e > 0.003 && fl.line.geometry.instanceCount > 0;
         }
       } else {
         // The cylinder shows through the skin in the agent's colour, then settles faint.
@@ -598,8 +629,13 @@ export class GraphScene {
         this.flashTopics.add(f.key);
         v.detail.value = Math.max(v.detail.value, e);
         v.mesh.material.color.lerp(this.tmpColor.set(color), Math.min(1, e * 1.5));
-        v.mesh.material.opacity = Math.max(v.mesh.material.opacity, 0.85 * e);
-        v.outline.material.opacity = Math.max(v.outline.material.opacity, e);
+        // Compose with the unflashed opacity, so the descending envelope
+        // can undo a previous peak even if spotlight paint has not run again.
+        const { lit, drawn } = v;
+        const fill = THREE.MathUtils.lerp(lit.ghostFill, lit.fill, drawn);
+        const outline = this.liveEntities.has(v.key) ? 1 : THREE.MathUtils.lerp(lit.ghostLine, lit.line, drawn);
+        v.mesh.material.opacity = Math.max(fill, 0.85 * e);
+        v.outline.material.opacity = Math.max(outline, e);
         // Most topics are small and sit deep inside: a solid dot in the agent's
         // colour, drawn over the skin, carries the flash to the outside view.
         let dot = this.flashDots.get(f.key);
@@ -1661,6 +1697,17 @@ export class GraphScene {
     el.removeEventListener('pointercancel', this.onPointerRelease);
     el.removeEventListener('pointerleave', this.onPointerLeave);
     window.removeEventListener('resize', this.onResize);
+    for (const { line, mat } of this.flashLines.values()) {
+      line.geometry.dispose();
+      mat.dispose();
+    }
+    for (const dot of this.flashDots.values()) dot.material.dispose();
+    this.flashDotTex?.dispose();
+    this.flashDotTex = null;
+    this.flashGroup.clear();
+    this.flashLines.clear();
+    this.flashDots.clear();
+    this.flashTopics.clear();
     this.controls.dispose();
     this.bloom.dispose();
     this.renderer.dispose();
