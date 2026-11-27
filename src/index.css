@@ -214,11 +214,6 @@ section h3 { font-family: var(--mono); font-size: var(--fs-label); font-weight: 
   .tb-row .live-pill { padding: 4px 8px; gap: 6px; letter-spacing: 0.05em; }
   .tb-row .row { gap: 6px; }
   .tb-row .row .tour-btn { padding-left: 8px; padding-right: 8px; gap: 5px; }
-}
-/* Narrow phones: a smaller brand and tighter buttons keep "Offline" and Tour on the row. */
-@media (max-width: 419px) {
-  .tb-row > .brand { font-size: 15px; gap: 7px; }
-  .topbar .tb-row .row button { padding-left: 7px; padding-right: 7px; }
   .tb-scroll { overflow-x: auto; scrollbar-width: none; }
   .topbar .row button, .seg button { padding: 5px 9px; font-size: var(--fs-meta); }
   .search-pop { position: absolute; left: 0; right: 0; top: 0; z-index: 6; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 6px; background: rgba(20, 20, 20, 0.97); }
@@ -230,6 +225,11 @@ section h3 { font-family: var(--mono); font-size: var(--fs-label); font-weight: 
   .readers-strip .split { flex: 1; max-width: 120px; margin-left: auto; }
   .hud-cards { position: absolute; left: 12px; right: 12px; bottom: 12px; max-height: 32vh; display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; align-items: flex-start; scrollbar-width: none; }
   .hud-cards > .hud { position: relative; flex: 0 0 calc(100vw - 40px); scroll-snap-align: center; max-height: 32vh; overflow-y: auto; }
+}
+/* Narrow phones: a smaller brand and tighter buttons keep "Offline" and Tour on the row. */
+@media (max-width: 419px) {
+  .tb-row > .brand { font-size: 15px; gap: 7px; }
+  .topbar .tb-row .row button { padding-left: 7px; padding-right: 7px; }
 }
 /* Phone on its side: every panel in the left half, the globe alone in the right half. */
 @media (orientation: landscape) and (max-height: 520px) {
