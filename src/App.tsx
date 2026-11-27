@@ -10,6 +10,7 @@ import { botName, citiesReady, demoLive, fetchLive, tierOf, type LiveBySite, typ
 import { AgentsPanel } from './hud/AgentsPanel';
 import { ReadersPanel, ReadersStrip, ReadingPanel } from './hud/ReadersPanel';
 import { ServedStrip } from './hud/ServedStrip';
+import { CardDots } from './hud/CardDots';
 import { TopBar } from './hud/TopBar';
 import { demoHistory, liveStats, readerPlace, sampleOf, shareOf, type ReadingRow, type Sample } from './hud/derive';
 import { useMedia } from './hud/useMedia';
@@ -656,6 +657,7 @@ function Viewer({ graph }: { graph: Graph }) {
           {legendEl}
         </div>
       )}
+      {cardsShown && <CardDots cards={cardsRef} count={(showLive ? 3 : 0) + (legendEl ? 1 : 0)} />}
 
       {showCredits && (
         <aside className="hud credits">
