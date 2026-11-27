@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { DOME_R } from '../data/globe';
 import { readerArc } from './arc';
-import { beamToSkin, frameAgent, frameInward, framePair, outranks, pathAt, pathPolicy, visibleFrom, kf, type CameraKeyframe } from './camera';
+import { beamToSkin, frameAgent, frameInward, framePair, outranks, pathAt, pathPolicy, proxyAnchor, visibleFrom, kf, type CameraKeyframe } from './camera';
 
 const FOV = 55;
 const ASPECTS = { desktop: 16 / 10, phone: 9 / 19.5 };
@@ -166,6 +166,20 @@ describe('agent fetching an entity, framed from outside', () => {
     expect(full).toBe(true);
     const eye = new THREE.Vector3(k.position.x, k.position.y, k.position.z);
     expect(eye.distanceTo(sat)).toBeLessThan(eye.distanceTo(entity.clone().setLength(DOME_R)));
+  });
+
+  it('places a stand-in only when the real satellite is below the horizon, and it gets the full shot (#82)', () => {
+    const swiss = new THREE.Vector3(0, 0, -40);
+    // Over Menlo Park, as measured in the app: below Switzerland's horizon.
+    const far = new THREE.Vector3(64, 57, -36);
+    const proxy = proxyAnchor(far, swiss)!;
+    expect(proxy).not.toBeNull();
+    expect(proxy.length()).toBeCloseTo(far.length(), 6);
+    for (const aspect of Object.values(ASPECTS)) expect(frameAgent(proxy, swiss, tans(aspect)).full).toBe(true);
+    // On the headquarters' side of the destination.
+    expect(proxy.clone().normalize().dot(far.clone().normalize())).toBeGreaterThan(swiss.clone().normalize().dot(far.clone().normalize()));
+    // Already over the destination: no stand-in.
+    expect(proxyAnchor(new THREE.Vector3(0, 10, -90), swiss)).toBeNull();
   });
 
   it('clips the beam where it enters the skin', () => {

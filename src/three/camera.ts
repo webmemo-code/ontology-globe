@@ -211,6 +211,25 @@ export function frameAgent(sat: THREE.Vector3, entity: THREE.Vector3, o: FrameOp
   return framePair([sat, dest], o);
 }
 
+/**
+ * Where a stand-in for the agent goes when the real one, over its operator's
+ * headquarters, is below its destination's horizon (#82): at the satellite's
+ * orbit, on the great circle toward it, half the horizon angle off the
+ * destination, so frameAgent's over-the-shoulder shot applies. Null when the
+ * real satellite already works.
+ */
+export function proxyAnchor(sat: THREE.Vector3, entity: THREE.Vector3): THREE.Vector3 | null {
+  const r = sat.length();
+  if (r <= DOME_R * 1.05) return null;
+  const u = entity.clone().normalize();
+  if (sat.clone().sub(u.clone().multiplyScalar(DOME_R)).normalize().dot(u) > 0.15) return null;
+  const s = sat.clone().normalize();
+  const toward = s.addScaledVector(u, -s.dot(u));
+  const side = toward.lengthSq() < 1e-6 ? perpendicular(u) : toward.normalize();
+  const a = 0.5 * Math.acos(DOME_R / r);
+  return u.multiplyScalar(Math.cos(a)).addScaledVector(side, Math.sin(a)).multiplyScalar(r);
+}
+
 /** The destination from outside, 35 degrees away from the origin's side. */
 function frameDestination(from: THREE.Vector3, to: THREE.Vector3): CameraKeyframe {
   const out = to.clone().normalize();

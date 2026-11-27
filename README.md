@@ -86,7 +86,11 @@ them.
   their location and destination are both in view (just the destination when
   the arc runs behind the globe), then circles it slowly until the next one.
   The camera stays outside the globe: an agent fetching an entity is framed
-  by its beam, from the satellite down to where it enters the globe. Dragging,
+  over its shoulder, the agent in front and the spot above its target behind.
+  When the agent's marker sits below the target's horizon (it hovers over its
+  company's headquarters), a stand-in marker, linked to it by a faint dashed
+  line, takes its place for that shot and fades once you drag or zoom out.
+  Topics in the middle are framed by their beam instead. Dragging,
   selecting or the tour takes over; clicking any row frames its pair the same
   way.
 
