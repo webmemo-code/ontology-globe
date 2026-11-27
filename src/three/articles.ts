@@ -12,10 +12,14 @@ import { rasteriseLand } from './land';
 
 const RANK: Record<Perf, number> = { top10: 0, top25: 1, active: 2, seen: 3, none: 4 };
 const ARTICLE_SIZE = 0.55;
-const LAND_SIZE = 0.5;
+// Land is the map, articles are the data (#66): the land lattice is cooler,
+// fainter and a little smaller than Reisememo's grey article dots, so the two
+// no longer blend. Shape and article colours stay as they were.
+const LAND_SIZE = 0.42;
 const LAND_DOTS = 26000;
 const LAND_R = DOME_R * 0.985;
-const LAND_COLOR = new THREE.Color('#8a8a88');
+const LAND_COLOR = new THREE.Color('#5c646e');
+const LAND_ALPHA = 0.6;
 const BAR_COLORS: Record<SiteKey, string> = { travelmemo: '#FF9000', reisememo: '#989898' };
 const NADIR: [number, number, number] = [0, -1, 0];
 
@@ -221,7 +225,7 @@ export function buildArticleLayer(graph: Graph, _pos: Map<string, Vec3>, nodes: 
     const c = g.getAttribute('color') as THREE.BufferAttribute;
     const s = g.getAttribute('size') as THREE.BufferAttribute;
     for (let i = 0; i < n; i++) {
-      c.setXYZW(i, LAND_COLOR.r, LAND_COLOR.g, LAND_COLOR.b, 0.8);
+      c.setXYZW(i, LAND_COLOR.r, LAND_COLOR.g, LAND_COLOR.b, LAND_ALPHA);
       s.setX(i, LAND_SIZE);
     }
     g.computeBoundingSphere();
