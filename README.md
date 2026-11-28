@@ -2,6 +2,8 @@
 
 **Live:** [webmemo-code.github.io/travel-graph-explorer](https://webmemo-code.github.io/travel-graph-explorer/?live)
 
+**Guide:** [How the travel graph works](https://webmemo-code.github.io/travel-graph-explorer/guide/): the ontology, each output (JSON-LD, taxonomies, EntityMap, llms.txt, OKF), discovery, AI-traffic measurement and an article index, built from [guide/](guide/) with every deploy.
+
 ![The globe from outside, with live readers and AI agents](docs/screens/globe-outside.jpg)
 
 ![Inside the globe: the topic wheel in the spotlight](docs/screens/globe-inside.jpg)
