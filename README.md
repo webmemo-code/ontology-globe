@@ -96,6 +96,15 @@ them.
   selecting or the tour takes over; clicking any row frames its pair the same
   way.
 
+## Data
+
+The globe and the guide read committed snapshots in `public/`
+(`graph.json`, `headings.json`, `system.json`), exported from both blogs every
+night by `scripts/scheduled_viz_snapshot.ps1` in
+[entity-map](https://github.com/webmemo-code/entity-map) and pushed here when
+they change. `pnpm check:snapshot [graph.json] [headings.json]` runs the
+guide's validation on a snapshot before it is committed.
+
 ## On a phone
 
 The panels become a strip and swipeable cards (held sideways: the panels in

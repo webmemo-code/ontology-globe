@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/build-guide.mjs",
     "build:guide": "node scripts/build-guide.mjs",
+    "check:snapshot": "node scripts/check-snapshot.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run"
