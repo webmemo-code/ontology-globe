@@ -64,6 +64,20 @@ describe('validateSnapshot', () => {
     expect(validateSnapshot(g, headings()).join('\n')).toMatch(/reisememo: no posts/);
   });
 
+  it('refuses a snapshot whose blog record is missing entirely', () => {
+    const g = snapshot();
+    g.sites = g.sites.filter((s) => s.key !== 'reisememo');
+    g.posts = g.posts.filter((p) => p.site !== 'reisememo');
+    g.posts[0].pair = undefined;
+    expect(validateSnapshot(g, headings()).join('\n')).toMatch(/blog reisememo is missing/);
+  });
+
+  it('refuses an empty snapshot', () => {
+    const g = { ...snapshot(), sites: [], nodes: [], edges: [], posts: [] };
+    const errors = validateSnapshot(g, headings());
+    expect(errors).toEqual(['graph.json: blog travelmemo is missing from the snapshot', 'graph.json: blog reisememo is missing from the snapshot']);
+  });
+
   it('refuses a counterpart on the same blog', () => {
     const g = snapshot();
     g.posts[0].pair = 'travelmemo:2';

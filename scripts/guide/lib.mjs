@@ -34,6 +34,9 @@ export function slugify(s) {
     .replace(/^-+|-+$/g, '');
 }
 
+/** Both blogs must be in every snapshot; a missing one is an incomplete export. */
+export const REQUIRED_SITES = ['travelmemo', 'reisememo'];
+
 const postKey = (p) => `${p.site}:${p.id}`;
 
 /**
@@ -65,6 +68,9 @@ export function validateSnapshot(graph, headings) {
   if (errors.length) return errors;
 
   const sites = new Map(graph.sites.map((s) => [s.key, s]));
+  for (const key of REQUIRED_SITES) {
+    if (!sites.has(key)) errors.push(`graph.json: blog ${key} is missing from the snapshot`);
+  }
   const nodes = new Set(graph.nodes.map((n) => n.key));
   const posts = new Set(graph.posts.map(postKey));
   for (const s of graph.sites) {
